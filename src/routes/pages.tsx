@@ -56,10 +56,8 @@ function MonitoredPagesPage() {
       const anchor = document.createElement('a')
       anchor.href = url
       anchor.download = result.filename
-      document.body.append(anchor)
       anchor.click()
-      anchor.remove()
-      URL.revokeObjectURL(url)
+      setTimeout(() => URL.revokeObjectURL(url), 0)
     } finally {
       setExporting(false)
     }
