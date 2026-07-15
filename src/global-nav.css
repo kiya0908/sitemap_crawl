@@ -1,0 +1,45 @@
+.global-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 54px;
+  padding: 0 max(16px, calc((100vw - 1440px) / 2));
+  border-bottom: 1px solid #e1e5ef;
+  background: rgba(255, 255, 255, .94);
+  backdrop-filter: blur(14px);
+}
+
+.global-nav a {
+  color: #4d586e;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.global-nav > div {
+  display: flex;
+  gap: 20px;
+}
+
+.global-nav a:hover {
+  color: #4350bc;
+}
+
+.global-nav .global-brand {
+  color: #29344d;
+  font-size: 15px;
+  letter-spacing: -.01em;
+}
+
+@media (max-width: 640px) {
+  .global-nav {
+    padding: 0 12px;
+  }
+
+  .global-nav > div {
+    gap: 14px;
+  }
+}
