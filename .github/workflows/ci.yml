@@ -22,7 +22,34 @@ jobs:
         with:
           node-version: 22
       - run: pnpm install --no-frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm build
+      - name: Run validation suite
+        run: |
+          set +e
+          mkdir -p ci-logs
+          pnpm lint > ci-logs/lint.log 2>&1
+          echo $? > ci-logs/lint.exit
+          pnpm typecheck > ci-logs/typecheck.log 2>&1
+          echo $? > ci-logs/typecheck.exit
+          pnpm test > ci-logs/test.log 2>&1
+          echo $? > ci-logs/test.exit
+          pnpm build > ci-logs/build.log 2>&1
+          echo $? > ci-logs/build.exit
+          exit 0
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-logs
+          path: ci-logs
+          retention-days: 7
+      - name: Check validation results
+        run: |
+          failed=0
+          for check in lint typecheck test build; do
+            code=$(cat "ci-logs/${check}.exit")
+            echo "${check}: exit ${code}"
+            if [ "${code}" != "0" ]; then
+              failed=1
+            fi
+          done
+          exit "${failed}"
