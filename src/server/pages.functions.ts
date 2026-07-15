@@ -1,7 +1,11 @@
 import { createServerFn } from '@tanstack/react-start'
 import { env } from 'cloudflare:workers'
 import { z } from 'zod'
-import { PagesRepository, type PageListFilters } from '../db/pages-repository'
+import {
+  PagesRepository,
+  type PageDetail,
+  type PageListFilters,
+} from '../db/pages-repository'
 
 const pageFiltersSchema = z.object({
   competitorId: z.string().max(100).optional(),
@@ -35,12 +39,17 @@ export const listMonitoredPages = createServerFn({ method: 'GET' })
   .validator(pageFiltersSchema)
   .handler(async ({ data }) => new PagesRepository(env.DB).listPages(cleanFilters(data)))
 
-export const getMonitoredPage = createServerFn({ method: 'GET' })
+export const getMonitoredPageSerialized = createServerFn({ method: 'GET' })
   .validator(pageIdSchema)
   .handler(async ({ data }) => {
     const detail = await new PagesRepository(env.DB).getPageDetail(data.pageId)
     return detail ? JSON.stringify(detail) : null
   })
+
+export async function getMonitoredPage(input: { data: { pageId: string } }): Promise<PageDetail | null> {
+  const serialized = await getMonitoredPageSerialized(input)
+  return serialized ? JSON.parse(serialized) as PageDetail : null
+}
 
 export const updatePageReview = createServerFn({ method: 'POST' })
   .validator(updateReviewSchema)
