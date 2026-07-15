@@ -38,6 +38,13 @@ function RootDocument({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body>
+        <nav className="global-nav" aria-label="全局导航">
+          <a className="global-brand" href="/">Sitemap Crawl</a>
+          <div>
+            <a href="/">Dashboard</a>
+            <a href="/pages">新增页面</a>
+          </div>
+        </nav>
         {children}
         <Scripts />
       </body>
