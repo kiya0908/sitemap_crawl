@@ -4,6 +4,8 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PagesRouteImport } from './routes/pages'
+import { Route as PagesPageIdRouteImport } from './routes/pages.$pageId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -11,22 +13,50 @@ const IndexRoute = IndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 
+const PagesRoute = PagesRouteImport.update({
+  id: '/pages',
+  path: '/pages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+
+const PagesPageIdRoute = PagesPageIdRouteImport.update({
+  id: '/$pageId',
+  path: '/$pageId',
+  getParentRoute: () => PagesRoute,
+} as any)
+
+interface PagesRouteChildren {
+  PagesPageIdRoute: typeof PagesPageIdRoute
+}
+
+const PagesRouteChildren: PagesRouteChildren = {
+  PagesPageIdRoute,
+}
+
+const PagesRouteWithChildren = PagesRoute._addFileChildren(PagesRouteChildren)
+
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/pages': typeof PagesRouteWithChildren
+  '/pages/$pageId': typeof PagesPageIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/pages': typeof PagesRouteWithChildren
+  '/pages/$pageId': typeof PagesPageIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/pages': typeof PagesRouteWithChildren
+  '/pages/$pageId': typeof PagesPageIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/pages' | '/pages/$pageId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/pages' | '/pages/$pageId'
+  id: '__root__' | '/' | '/pages' | '/pages/$pageId'
   fileRoutesById: FileRoutesById
 }
 
@@ -39,11 +69,31 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pages': {
+      id: '/pages'
+      path: '/pages'
+      fullPath: '/pages'
+      preLoaderRoute: typeof PagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pages/$pageId': {
+      id: '/pages/$pageId'
+      path: '/$pageId'
+      fullPath: '/pages/$pageId'
+      preLoaderRoute: typeof PagesPageIdRouteImport
+      parentRoute: typeof PagesRouteImport
+    }
   }
 }
 
-const rootRouteChildren = {
+interface RootRouteChildren {
+  IndexRoute: typeof IndexRoute
+  PagesRoute: typeof PagesRouteWithChildren
+}
+
+const rootRouteChildren: RootRouteChildren = {
   IndexRoute,
+  PagesRoute: PagesRouteWithChildren,
 }
 
 export const routeTree = rootRouteImport
