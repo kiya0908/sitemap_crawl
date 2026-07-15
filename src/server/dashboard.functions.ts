@@ -8,7 +8,7 @@ import { normalizeDomain, sameRegistrableHost } from './sitemap/normalize'
 const createCompetitorSchema = z.object({
   name: z.string().trim().min(1).max(100),
   domain: z.string().trim().min(1).max(253),
-  sitemapUrls: z.array(z.url()).max(10).default([]),
+  sitemapUrls: z.array(z.string().url()).max(10).default([]),
 })
 
 const competitorIdSchema = z.object({
