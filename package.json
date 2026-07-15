@@ -17,8 +17,8 @@
     "db:migrate:remote": "wrangler d1 migrations apply sitemap-crawl --remote",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts"
   },
   "dependencies": {
     "@tanstack/react-router": "latest",
@@ -37,7 +37,7 @@
     "@vitejs/plugin-react": "latest",
     "eslint": "latest",
     "globals": "latest",
-    "typescript": "latest",
+    "typescript": "5.9.3",
     "typescript-eslint": "latest",
     "vite": "latest",
     "vitest": "latest",
