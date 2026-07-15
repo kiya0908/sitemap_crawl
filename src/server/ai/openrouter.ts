@@ -110,7 +110,7 @@ export class OpenRouterSeoProvider implements SeoAnalysisProvider {
       }),
     })
 
-    const payload = await response.json<OpenRouterResponse>()
+    const payload = (await response.json()) as OpenRouterResponse
     if (!response.ok) {
       throw new Error(payload.error?.message ?? `OpenRouter returned HTTP ${response.status}`)
     }
