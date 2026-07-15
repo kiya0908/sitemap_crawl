@@ -5,6 +5,7 @@ import {
   PagesRepository,
   type PageDetail,
   type PageListFilters,
+  type PageListItem,
 } from '../db/pages-repository'
 
 const pageFiltersSchema = z.object({
@@ -66,10 +67,69 @@ export const updatePageReview = createServerFn({ method: 'POST' })
 
 export const exportMonitoredPages = createServerFn({ method: 'GET' })
   .validator(pageFiltersSchema)
-  .handler(async ({ data }) => ({
-    filename: `sitemap-crawl-${new Date().toISOString().slice(0, 10)}.csv`,
-    csv: await new PagesRepository(env.DB).exportCsv(cleanFilters(data)),
-  }))
+  .handler(async ({ data }) => {
+    const filters = cleanFilters(data)
+    const repository = new PagesRepository(env.DB)
+    const items = await loadAllFilteredPages(repository, filters)
+    return {
+      filename: `sitemap-crawl-${new Date().toISOString().slice(0, 10)}.csv`,
+      csv: buildCsv(items),
+    }
+  })
+
+async function loadAllFilteredPages(repository: PagesRepository, filters: PageListFilters): Promise<PageListItem[]> {
+  const items: PageListItem[] = []
+  let page = 1
+  let total = 0
+
+  do {
+    const result = await repository.listPages({ ...filters, page, pageSize: 100 })
+    items.push(...result.items)
+    total = result.total
+    page += 1
+  } while (items.length < total && items.length < 5_000)
+
+  return items
+}
+
+function buildCsv(items: PageListItem[]): string {
+  const rows = [
+    [
+      'First Seen',
+      'Competitor',
+      'URL',
+      'Title',
+      'Lifecycle Status',
+      'Fetch Status',
+      'Analysis Status',
+      'Page Type',
+      'Primary Keyword (Inferred)',
+      'Search Intent',
+      'Review Status',
+      'Worth Following',
+    ],
+    ...items.map((item) => [
+      item.firstSeenAt,
+      item.competitorName,
+      item.url,
+      item.title ?? '',
+      item.lifecycleStatus,
+      item.fetchStatus ?? '',
+      item.analysisStatus ?? '',
+      item.pageType ?? '',
+      item.primaryKeyword ?? '',
+      item.searchIntent ?? '',
+      item.reviewStatus,
+      item.isWorthFollowing ? 'yes' : 'no',
+    ]),
+  ]
+
+  return `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`
+}
+
+function csvCell(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`
+}
 
 function emptyToNull(value: string | null): string | null {
   const trimmed = value?.trim() ?? ''
