@@ -5,6 +5,7 @@ import {
   Scripts,
   createRootRoute,
 } from '@tanstack/react-router'
+import navStylesUrl from '../global-nav.css?url'
 import stylesUrl from '../styles.css?url'
 
 export const Route = createRootRoute({
@@ -18,7 +19,10 @@ export const Route = createRootRoute({
         content: 'Private competitor Sitemap monitoring and SEO analysis dashboard.',
       },
     ],
-    links: [{ rel: 'stylesheet', href: stylesUrl }],
+    links: [
+      { rel: 'stylesheet', href: stylesUrl },
+      { rel: 'stylesheet', href: navStylesUrl },
+    ],
   }),
   component: RootComponent,
 })
