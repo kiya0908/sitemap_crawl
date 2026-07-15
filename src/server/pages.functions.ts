@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { env } from 'cloudflare:workers'
 import { z } from 'zod'
-import { PagesRepository } from '../db/pages-repository'
+import { PagesRepository, type PageListFilters } from '../db/pages-repository'
 
 const pageFiltersSchema = z.object({
   competitorId: z.string().max(100).optional(),
@@ -37,7 +37,10 @@ export const listMonitoredPages = createServerFn({ method: 'GET' })
 
 export const getMonitoredPage = createServerFn({ method: 'GET' })
   .validator(pageIdSchema)
-  .handler(async ({ data }) => new PagesRepository(env.DB).getPageDetail(data.pageId))
+  .handler(async ({ data }) => {
+    const detail = await new PagesRepository(env.DB).getPageDetail(data.pageId)
+    return detail ? JSON.stringify(detail) : null
+  })
 
 export const updatePageReview = createServerFn({ method: 'POST' })
   .validator(updateReviewSchema)
@@ -64,16 +67,19 @@ function emptyToNull(value: string | null): string | null {
   return trimmed ? trimmed : null
 }
 
-function cleanFilters(input: z.infer<typeof pageFiltersSchema>) {
-  return {
-    competitorId: input.competitorId || undefined,
-    pageType: input.pageType || undefined,
-    searchIntent: input.searchIntent || undefined,
-    reviewStatus: input.reviewStatus || undefined,
-    query: input.query || undefined,
-    dateFrom: input.dateFrom,
-    dateTo: input.dateTo,
+function cleanFilters(input: z.infer<typeof pageFiltersSchema>): PageListFilters {
+  const filters: PageListFilters = {
     page: input.page,
     pageSize: input.pageSize,
   }
+
+  if (input.competitorId) filters.competitorId = input.competitorId
+  if (input.pageType) filters.pageType = input.pageType
+  if (input.searchIntent) filters.searchIntent = input.searchIntent
+  if (input.reviewStatus) filters.reviewStatus = input.reviewStatus
+  if (input.query) filters.query = input.query
+  if (input.dateFrom) filters.dateFrom = input.dateFrom
+  if (input.dateTo) filters.dateTo = input.dateTo
+
+  return filters
 }
