@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Outlet, createFileRoute, useLocation } from '@tanstack/react-router'
 import { useState } from 'react'
 import { getDashboardData } from '../server/dashboard.functions'
 import { exportMonitoredPages, listMonitoredPages } from '../server/pages.functions'
@@ -30,8 +30,17 @@ export const Route = createFileRoute('/pages')({
     ])
     return { pages, competitors: dashboard.competitors }
   },
-  component: MonitoredPagesPage,
+  component: MonitoredPagesLayout,
 })
+
+function MonitoredPagesLayout() {
+  const location = useLocation()
+  if (location.pathname !== '/pages' && location.pathname !== '/pages/') {
+    return <Outlet />
+  }
+
+  return <MonitoredPagesPage />
+}
 
 function MonitoredPagesPage() {
   const { pages, competitors } = Route.useLoaderData()
