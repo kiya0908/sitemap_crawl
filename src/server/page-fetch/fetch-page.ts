@@ -1,5 +1,11 @@
 import { sha256 } from '../../lib/hash'
-import { assertAllowedOutboundUrl } from '../security/outbound'
+import {
+  OutboundRedirectLimitError,
+  ResponseBodyTimeoutError,
+  ResponseBodyTooLargeError,
+  fetchAllowedOutbound,
+  readResponseTextLimited,
+} from '../security/safe-fetch'
 
 export interface PageSeoResult {
   status: 'success' | 'failed' | 'unsupported'
@@ -40,85 +46,69 @@ export async function fetchPageSeo(options: FetchPageOptions): Promise<PageSeoRe
   let currentUrl = options.url
 
   try {
-    for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
-      assertAllowedOutboundUrl(currentUrl, options.competitorDomain)
-      const response = await fetchWithTimeout(currentUrl, fetchImpl, timeoutMs)
-      const location = response.headers.get('location')
+    const fetched = await fetchAllowedOutbound({
+      url: currentUrl,
+      allowedDomain: options.competitorDomain,
+      fetchImpl,
+      timeoutMs,
+      maxRedirects,
+      init: {
+        headers: {
+          'User-Agent': 'SitemapCrawl/0.1 (+private SEO monitoring tool)',
+          Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5',
+        },
+      },
+    })
+    const { response } = fetched
+    currentUrl = fetched.finalUrl
+    redirectChain.push(...fetched.redirectChain)
 
-      if (isRedirect(response.status) && location) {
-        if (redirectCount === maxRedirects) {
-          throw new PageFetchError('PAGE_REDIRECT_LIMIT', `More than ${maxRedirects} redirects`, response.status)
-        }
-        const nextUrl = new URL(location, currentUrl).toString()
-        assertAllowedOutboundUrl(nextUrl, options.competitorDomain)
-        redirectChain.push(nextUrl)
-        currentUrl = nextUrl
-        continue
-      }
+    const contentType = response.headers.get('content-type')
+    if (!response.ok) {
+      throw new PageFetchError('PAGE_HTTP_ERROR', `HTTP ${response.status}`, response.status)
+    }
 
-      const contentType = response.headers.get('content-type')
-      if (!response.ok) {
-        throw new PageFetchError('PAGE_HTTP_ERROR', `HTTP ${response.status}`, response.status)
-      }
-
-      if (!contentType?.toLowerCase().includes('text/html')) {
-        return emptyResult({
-          status: 'unsupported',
-          httpStatus: response.status,
-          finalUrl: currentUrl,
-          redirectChain,
-          contentType,
-          errorCode: 'PAGE_UNSUPPORTED_CONTENT_TYPE',
-          errorMessage: contentType ? `Unsupported content type: ${contentType}` : 'Missing content type',
-        })
-      }
-
-      const declaredLength = Number(response.headers.get('content-length') ?? 0)
-      if (declaredLength > maxResponseBytes) {
-        throw new PageFetchError('PAGE_RESPONSE_TOO_LARGE', `Page exceeds ${maxResponseBytes} bytes`, response.status)
-      }
-
-      const html = await response.text()
-      const actualBytes = new TextEncoder().encode(html).byteLength
-      if (actualBytes > maxResponseBytes) {
-        throw new PageFetchError('PAGE_RESPONSE_TOO_LARGE', `Page exceeds ${maxResponseBytes} bytes`, response.status)
-      }
-
-      const extracted = extractSeo(html, currentUrl, maxExcerptChars)
-      return {
-        status: 'success',
+    if (!contentType?.toLowerCase().includes('text/html')) {
+      return emptyResult({
+        status: 'unsupported',
         httpStatus: response.status,
         finalUrl: currentUrl,
         redirectChain,
         contentType,
-        ...extracted,
-        contentHash: await sha256(extracted.contentExcerpt ?? ''),
-        errorCode: null,
-        errorMessage: null,
-      }
+        errorCode: 'PAGE_UNSUPPORTED_CONTENT_TYPE',
+        errorMessage: contentType ? `Unsupported content type: ${contentType}` : 'Missing content type',
+      })
+    }
+
+    const html = await readResponseTextLimited(response, maxResponseBytes, timeoutMs)
+    const extracted = extractSeo(html, currentUrl, maxExcerptChars)
+    return {
+      status: 'success',
+      httpStatus: response.status,
+      finalUrl: currentUrl,
+      redirectChain,
+      contentType,
+      ...extracted,
+      contentHash: await sha256(extracted.contentExcerpt ?? ''),
+      errorCode: null,
+      errorMessage: null,
     }
   } catch (error) {
     const typed = error instanceof PageFetchError ? error : null
     return emptyResult({
       status: 'failed',
-      httpStatus: typed?.httpStatus ?? null,
+      httpStatus: typed?.httpStatus ?? (error instanceof OutboundRedirectLimitError ? error.httpStatus : null),
       finalUrl: currentUrl,
       redirectChain,
       contentType: null,
-      errorCode: typed?.code ?? (error instanceof DOMException && error.name === 'AbortError' ? 'PAGE_FETCH_TIMEOUT' : 'PAGE_FETCH_FAILED'),
+      errorCode: typed?.code
+        ?? (error instanceof OutboundRedirectLimitError ? 'PAGE_REDIRECT_LIMIT' : null)
+        ?? (error instanceof ResponseBodyTimeoutError ? 'PAGE_FETCH_TIMEOUT' : null)
+        ?? (error instanceof ResponseBodyTooLargeError ? 'PAGE_RESPONSE_TOO_LARGE' : null)
+        ?? (error instanceof DOMException && ['AbortError', 'TimeoutError'].includes(error.name) ? 'PAGE_FETCH_TIMEOUT' : 'PAGE_FETCH_FAILED'),
       errorMessage: error instanceof Error ? error.message : 'Unknown page fetch error',
     })
   }
-
-  return emptyResult({
-    status: 'failed',
-    httpStatus: null,
-    finalUrl: currentUrl,
-    redirectChain,
-    contentType: null,
-    errorCode: 'PAGE_FETCH_FAILED',
-    errorMessage: 'Unexpected page fetch state',
-  })
 }
 
 function extractSeo(html: string, baseUrl: string, maxExcerptChars: number): Omit<PageSeoResult,
@@ -206,27 +196,6 @@ function decodeEntities(value: string): string {
     if (entity.startsWith('#')) return String.fromCodePoint(Number.parseInt(entity.slice(1), 10))
     return entities[entity.toLowerCase()] ?? `&${entity};`
   })
-}
-
-async function fetchWithTimeout(url: string, fetchImpl: typeof fetch, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    return await fetchImpl(url, {
-      redirect: 'manual',
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'SitemapCrawl/0.1 (+private SEO monitoring tool)',
-        Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5',
-      },
-    })
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-function isRedirect(status: number): boolean {
-  return [301, 302, 303, 307, 308].includes(status)
 }
 
 function emptyResult(input: Pick<PageSeoResult,

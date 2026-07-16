@@ -19,7 +19,10 @@ export function calculateScanDiff(
   for (const entry of currentEntries) {
     const existing = existingByUrl.get(entry.normalizedUrl)
     if (!existing) {
-      result.newEntries.push(entry)
+      // A partial Sitemap traversal cannot establish that a never-seen URL
+      // belongs to a trustworthy full scan. Defer confirmation until the next
+      // complete run, when it can safely enter the page lifecycle and pipeline.
+      if (isComplete) result.newEntries.push(entry)
       continue
     }
 

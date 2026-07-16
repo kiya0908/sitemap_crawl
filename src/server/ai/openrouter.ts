@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import { readResponseTextLimited } from '../security/safe-fetch'
 import type { SeoAnalysisProvider } from './provider'
 import {
   seoAnalysisJsonSchema,
@@ -15,16 +17,17 @@ interface OpenRouterOptions {
   maxRetries?: number
 }
 
-interface OpenRouterResponse {
-  choices?: Array<{
-    message?: {
-      content?: string | Array<{ type?: string; text?: string }>
-    }
-  }>
-  error?: {
-    message?: string
-  }
-}
+const openRouterResponseSchema = z.object({
+  choices: z.array(z.object({
+    message: z.object({
+      content: z.union([
+        z.string(),
+        z.array(z.object({ text: z.string().optional() }).passthrough()),
+      ]).optional(),
+    }).passthrough().optional(),
+  }).passthrough()).optional(),
+  error: z.object({ message: z.string().optional() }).passthrough().optional(),
+}).passthrough()
 
 export class OpenRouterSeoProvider implements SeoAnalysisProvider {
   readonly providerName = 'openrouter'
@@ -70,6 +73,7 @@ export class OpenRouterSeoProvider implements SeoAnalysisProvider {
     const response = await this.fetchImpl('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers,
+      signal: AbortSignal.timeout(30_000),
       body: JSON.stringify({
         model: this.options.model,
         provider: {
@@ -113,7 +117,9 @@ export class OpenRouterSeoProvider implements SeoAnalysisProvider {
       }),
     })
 
-    const payload = (await response.json()) as OpenRouterResponse
+    const payload = openRouterResponseSchema.parse(
+      JSON.parse(await readResponseTextLimited(response, 256_000, 30_000)),
+    )
     if (!response.ok) {
       throw new Error(payload.error?.message ?? `OpenRouter returned HTTP ${response.status}`)
     }

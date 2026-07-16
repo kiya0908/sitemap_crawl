@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "sitemap-crawl",
-  "compatibility_date": "2026-07-15",
+  "compatibility_date": "2026-07-16",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
   "observability": {

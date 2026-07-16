@@ -1,5 +1,11 @@
 import { sha256 } from '../../lib/hash'
 import { assertAllowedOutboundUrl } from '../security/outbound'
+import {
+  OutboundRedirectLimitError,
+  ResponseBodyTooLargeError,
+  fetchAllowedOutbound,
+  readResponseTextLimited,
+} from '../security/safe-fetch'
 import type { SitemapUrlEntry } from '../types'
 import { normalizeUrl } from './normalize'
 import { parseSitemapXml } from './parse'
@@ -94,14 +100,15 @@ export async function collectSitemapEntries(options: CollectOptions): Promise<Co
     visited.add(normalizedSource)
 
     try {
-      const response = await fetchWithLimits(seed.url, fetchImpl, timeoutMs, maxResponseBytes)
+      const { response, text: xml } = await fetchWithLimits(
+        seed.url,
+        options.competitorDomain,
+        fetchImpl,
+        timeoutMs,
+        maxResponseBytes,
+      )
       if (!response.ok) {
         throw new SitemapFetchError('SITEMAP_HTTP_ERROR', `HTTP ${response.status}`, response.status)
-      }
-
-      const xml = await response.text()
-      if (new TextEncoder().encode(xml).byteLength > maxResponseBytes) {
-        throw new SitemapFetchError('SITEMAP_RESPONSE_TOO_LARGE', `Sitemap exceeds ${maxResponseBytes} bytes`, response.status)
       }
 
       const document = parseSitemapXml(xml)
@@ -144,7 +151,14 @@ export async function collectSitemapEntries(options: CollectOptions): Promise<Co
       })
 
       for (const child of document.childSitemaps) {
-        discoveredChildren.push({ url: child.loc, parentUrl: seed.url })
+        try {
+          assertAllowedOutboundUrl(child.loc, options.competitorDomain)
+          normalizeUrl(child.loc)
+          discoveredChildren.push({ url: child.loc, parentUrl: seed.url })
+        } catch {
+          // walk records the rejected child in the per-Sitemap result without
+          // persisting it as a future enabled source.
+        }
         await walk({ id: null, url: child.loc }, depth + 1, seed.url)
       }
     } catch (error) {
@@ -178,31 +192,35 @@ export async function collectSitemapEntries(options: CollectOptions): Promise<Co
 
 async function fetchWithLimits(
   url: string,
+  competitorDomain: string,
   fetchImpl: typeof fetch,
   timeoutMs: number,
   maxResponseBytes: number,
-): Promise<Response> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort('timeout'), timeoutMs)
-
+): Promise<{ response: Response; text: string }> {
+  let response: Response | null = null
   try {
-    const response = await fetchImpl(url, {
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'SitemapCrawl/0.1 (+private SEO monitoring tool)',
-        Accept: 'application/xml,text/xml,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.5',
+    const fetched = await fetchAllowedOutbound({
+      url,
+      allowedDomain: competitorDomain,
+      fetchImpl,
+      timeoutMs,
+      init: {
+        headers: {
+          'User-Agent': 'SitemapCrawl/0.1 (+private SEO monitoring tool)',
+          Accept: 'application/xml,text/xml,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.5',
+        },
       },
     })
-
-    const declaredLength = Number(response.headers.get('content-length') ?? 0)
-    if (declaredLength > maxResponseBytes) {
-      throw new SitemapFetchError('SITEMAP_RESPONSE_TOO_LARGE', `Sitemap exceeds ${maxResponseBytes} bytes`, response.status)
+    response = fetched.response
+    return { response, text: await readResponseTextLimited(response, maxResponseBytes, timeoutMs) }
+  } catch (error) {
+    if (error instanceof ResponseBodyTooLargeError) {
+      throw new SitemapFetchError('SITEMAP_RESPONSE_TOO_LARGE', error.message, response?.status ?? null)
     }
-
-    return response
-  } finally {
-    clearTimeout(timeout)
+    if (error instanceof OutboundRedirectLimitError) {
+      throw new SitemapFetchError('SITEMAP_REDIRECT_LIMIT', error.message, error.httpStatus)
+    }
+    throw error
   }
 }
 

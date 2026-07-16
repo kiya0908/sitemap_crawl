@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { env } from 'cloudflare:workers'
 import { z } from 'zod'
+import { csvCell } from '../lib/csv'
 import {
   PagesRepository,
   type PageDetail,
@@ -125,10 +126,6 @@ function buildCsv(items: PageListItem[]): string {
   ]
 
   return `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`
-}
-
-function csvCell(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`
 }
 
 function emptyToNull(value: string | null): string | null {

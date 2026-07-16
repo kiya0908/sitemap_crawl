@@ -61,4 +61,42 @@ describe('collectSitemapEntries', () => {
     expect(result.isComplete).toBe(false)
     expect(result.processed.some((item) => item.status === 'failed')).toBe(true)
   })
+
+  it('does not follow or persist an off-domain Sitemap redirect', async () => {
+    const requested: string[] = []
+    const mockFetch = (async (input: string | URL | Request) => {
+      requested.push(String(input))
+      return new Response(null, {
+        status: 302,
+        headers: { Location: 'https://attacker.example/steal.xml' },
+      })
+    }) as typeof fetch
+
+    const result = await collectSitemapEntries({
+      competitorDomain: 'example.com',
+      seeds: [{ id: 'root', url: 'https://example.com/sitemap.xml' }],
+      fetchImpl: mockFetch,
+    })
+
+    expect(result.isComplete).toBe(false)
+    expect(result.discoveredChildren).toEqual([])
+    expect(requested).toEqual(['https://example.com/sitemap.xml'])
+  })
+
+  it('does not persist a malformed child Sitemap source', async () => {
+    const mockFetch = (async () => new Response(`
+      <sitemapindex>
+        <sitemap><loc>not-a-url</loc></sitemap>
+      </sitemapindex>
+    `)) as typeof fetch
+
+    const result = await collectSitemapEntries({
+      competitorDomain: 'example.com',
+      seeds: [{ id: 'root', url: 'https://example.com/sitemap.xml' }],
+      fetchImpl: mockFetch,
+    })
+
+    expect(result.isComplete).toBe(false)
+    expect(result.discoveredChildren).toEqual([])
+  })
 })

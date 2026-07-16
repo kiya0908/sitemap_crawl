@@ -46,7 +46,10 @@ export const createCompetitor = createServerFn({ method: 'POST' })
         }
       }
 
-      console.error('Failed to create competitor', error)
+      console.error(JSON.stringify({
+        message: 'Failed to create competitor',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }))
       throw new Error('创建竞品失败，请稍后重试。')
     }
   })

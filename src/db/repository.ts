@@ -1,5 +1,6 @@
 import { createId } from '../lib/id'
-import { CompetitorDomainConflictError } from './errors'
+import { tokyoDayStartUtc } from '../lib/time'
+import { CompetitorDomainConflictError, ScanAlreadyRunningError } from './errors'
 import { normalizeDomain, normalizeUrl } from '../server/sitemap/normalize'
 import type {
   CompetitorRecord,
@@ -125,23 +126,32 @@ export class SitemapRepository {
   }
 
   async createScanRun(competitorId: string, triggerType: ScanTrigger): Promise<string> {
-    const running = await this.db
-      .prepare(`SELECT id FROM scan_runs WHERE competitor_id = ? AND status = 'running' LIMIT 1`)
-      .bind(competitorId)
-      .first<{ id: string }>()
-
-    if (running) {
-      throw new Error(`A scan is already running for competitor ${competitorId}`)
-    }
-
     const id = createId('scan')
     const now = new Date().toISOString()
-    await this.db
-      .prepare(`INSERT INTO scan_runs
-        (id, competitor_id, trigger_type, status, is_complete, started_at, created_at)
-        VALUES (?, ?, ?, 'running', 0, ?, ?)`)
-      .bind(id, competitorId, triggerType, now, now)
+    const staleBefore = new Date(Date.now() - 6 * 60 * 60 * 1_000).toISOString()
+
+    await this.db.prepare(`UPDATE scan_runs
+      SET status = 'failed', is_complete = 0, finished_at = ?,
+          error_summary = COALESCE(error_summary, 'Recovered stale running scan')
+      WHERE competitor_id = ? AND status = 'running' AND started_at < ?`)
+      .bind(now, competitorId, staleBefore)
       .run()
+
+    try {
+      await this.db
+        .prepare(`INSERT INTO scan_runs
+          (id, competitor_id, trigger_type, status, is_complete, started_at, created_at)
+          VALUES (?, ?, ?, 'running', 0, ?, ?)`)
+        .bind(id, competitorId, triggerType, now, now)
+        .run()
+    } catch (error) {
+      const running = await this.db
+        .prepare(`SELECT id FROM scan_runs WHERE competitor_id = ? AND status = 'running' LIMIT 1`)
+        .bind(competitorId)
+        .first<{ id: string }>()
+      if (running) throw new ScanAlreadyRunningError(competitorId, running.id)
+      throw error
+    }
     return id
   }
 
@@ -255,8 +265,12 @@ export class SitemapRepository {
         this.db
           .prepare(`INSERT OR IGNORE INTO page_events
             (id, page_id, scan_run_id, event_type, detected_at, created_at)
-            SELECT ?, id, ?, 'baseline_added', ?, ? FROM pages
-            WHERE competitor_id = ? AND normalized_url = ?`)
+            SELECT ?, p.id, ?, 'baseline_added', ?, ? FROM pages p
+            WHERE p.competitor_id = ? AND p.normalized_url = ?
+              AND NOT EXISTS (
+                SELECT 1 FROM page_events existing_event
+                WHERE existing_event.page_id = p.id AND existing_event.event_type = 'baseline_added'
+              )`)
           .bind(createId('evt'), scanRunId, now, now, competitorId, entry.normalizedUrl),
       )
       const sourceId = sourceMap.get(safeNormalize(entry.sourceUrl))
@@ -405,14 +419,14 @@ export class SitemapRepository {
     recentScans: Array<Record<string, string | number | null>>
   }> {
     const competitors = await this.listCompetitors()
-    const today = new Date()
-    today.setUTCHours(0, 0, 0, 0)
+    const today = tokyoDayStartUtc()
     const sevenDays = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
     const counts = await this.db.prepare(`SELECT
-      SUM(CASE WHEN first_seen_at >= ? AND lifecycle_status = 'new' THEN 1 ELSE 0 END) AS today_new,
-      SUM(CASE WHEN first_seen_at >= ? AND lifecycle_status IN ('new', 'active') THEN 1 ELSE 0 END) AS seven_day_new
-      FROM pages`).bind(today.toISOString(), sevenDays).first<{ today_new: number | null; seven_day_new: number | null }>()
+      SUM(CASE WHEN detected_at >= ? THEN 1 ELSE 0 END) AS today_new,
+      SUM(CASE WHEN detected_at >= ? THEN 1 ELSE 0 END) AS seven_day_new
+      FROM page_events
+      WHERE event_type = 'discovered'`).bind(today, sevenDays).first<{ today_new: number | null; seven_day_new: number | null }>()
     const reviews = await this.db.prepare(`SELECT
       SUM(CASE WHEN review_status = 'unreviewed' THEN 1 ELSE 0 END) AS unreviewed,
       SUM(CASE WHEN is_worth_following = 1 THEN 1 ELSE 0 END) AS worth_following

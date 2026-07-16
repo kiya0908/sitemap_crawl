@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SitemapRepository } from '../src/db/repository'
-import { CompetitorDomainConflictError } from '../src/db/errors'
+import { CompetitorDomainConflictError, ScanAlreadyRunningError } from '../src/db/errors'
 
 describe('SitemapRepository.createCompetitor', () => {
   it('在有效竞品已使用相同域名时返回可识别的业务冲突', async () => {
@@ -57,6 +57,16 @@ describe('SitemapRepository.createCompetitor', () => {
   })
 })
 
+describe('SitemapRepository.createScanRun', () => {
+  it('converts the database scan lock into a recognizable business conflict', async () => {
+    const db = createScanLockDb()
+    const repository = new SitemapRepository(db)
+
+    await expect(repository.createScanRun('cmp_1', 'manual'))
+      .rejects.toEqual(new ScanAlreadyRunningError('cmp_1', 'scan_running'))
+  })
+})
+
 function createFakeDb(input: {
   existingCompetitorIds: Array<string | null>
   batchError?: Error
@@ -79,5 +89,19 @@ function createFakeDb(input: {
       if (input.batchError) throw input.batchError
       return []
     },
+  } as unknown as D1Database
+}
+
+function createScanLockDb(): D1Database {
+  return {
+    prepare: (sql: string) => ({
+      bind: () => ({
+        run: async () => {
+          if (sql.includes('INSERT INTO scan_runs')) throw new Error('unique constraint')
+          return undefined
+        },
+        first: async () => ({ id: 'scan_running' }),
+      }),
+    }),
   } as unknown as D1Database
 }

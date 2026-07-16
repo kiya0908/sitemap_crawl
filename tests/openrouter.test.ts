@@ -65,4 +65,20 @@ describe('OpenRouterSeoProvider', () => {
     })
     expect(analysis.result).toEqual(validAnalysis)
   })
+
+  it('rejects an oversized API response without buffering it indefinitely', async () => {
+    const fetchMock = (async () => new Response('x'.repeat(300_000), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })) as typeof fetch
+    const provider = new OpenRouterSeoProvider({
+      apiKey: 'test-key',
+      model: 'deepseek/deepseek-v4-flash',
+      appName: 'Sitemap Crawl',
+      fetchImpl: fetchMock,
+      maxRetries: 0,
+    })
+
+    await expect(provider.analyze(input)).rejects.toThrow('Response exceeds 256000 bytes')
+  })
 })

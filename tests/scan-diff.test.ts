@@ -35,6 +35,17 @@ describe('calculateScanDiff', () => {
     expect(result.confirmedMissing).toHaveLength(0)
   })
 
+  it('does not confirm never-seen URLs as new during an incomplete scan', () => {
+    const result = calculateScanDiff(
+      [entry('https://example.com/a'), entry('https://example.com/unconfirmed')],
+      [page()],
+      false,
+    )
+
+    expect(result.newEntries).toHaveLength(0)
+    expect(result.presentEntries).toHaveLength(1)
+  })
+
   it('uses two complete missing scans before confirmation', () => {
     const first = calculateScanDiff([], [page({ missingStreak: 0 })], true)
     expect(first.firstMissing).toHaveLength(1)

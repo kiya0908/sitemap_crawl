@@ -1,4 +1,5 @@
 import { assertAllowedOutboundUrl } from '../security/outbound'
+import { fetchAllowedOutbound, readResponseTextLimited } from '../security/safe-fetch'
 import { normalizeUrl } from './normalize'
 
 export interface DiscoveredRootSitemap {
@@ -16,12 +17,15 @@ export async function discoverRootSitemaps(
   try {
     const robotsUrl = `${base}/robots.txt`
     assertAllowedOutboundUrl(robotsUrl, domain)
-    const response = await fetchImpl(robotsUrl, {
-      headers: { 'User-Agent': 'SitemapCrawl/0.1 (+private SEO monitoring tool)' },
-      signal: AbortSignal.timeout(10_000),
+    const { response } = await fetchAllowedOutbound({
+      url: robotsUrl,
+      allowedDomain: domain,
+      fetchImpl,
+      timeoutMs: 10_000,
+      init: { headers: { 'User-Agent': 'SitemapCrawl/0.1 (+private SEO monitoring tool)' } },
     })
     if (response.ok) {
-      const text = (await response.text()).slice(0, 250_000)
+      const text = await readResponseTextLimited(response, 250_000, 10_000)
       for (const line of text.split(/\r?\n/)) {
         const match = line.match(/^\s*Sitemap\s*:\s*(\S+)\s*$/i)
         if (!match?.[1]) continue
@@ -40,16 +44,21 @@ export async function discoverRootSitemaps(
   for (const path of ['/sitemap.xml', '/sitemap_index.xml', '/wp-sitemap.xml']) {
     const url = `${base}${path}`
     try {
-      const response = await fetchImpl(url, {
-        method: 'GET',
-        headers: {
-          'User-Agent': 'SitemapCrawl/0.1 (+private SEO monitoring tool)',
-          Range: 'bytes=0-1024',
+      const { response } = await fetchAllowedOutbound({
+        url,
+        allowedDomain: domain,
+        fetchImpl,
+        timeoutMs: 10_000,
+        init: {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'SitemapCrawl/0.1 (+private SEO monitoring tool)',
+            Range: 'bytes=0-4095',
+          },
         },
-        signal: AbortSignal.timeout(10_000),
       })
       if (!response.ok) continue
-      const preview = await response.text()
+      const preview = await readResponseTextLimited(response, 4_096, 10_000)
       if (!/<(?:urlset|sitemapindex)\b/i.test(preview)) continue
       const normalized = normalizeUrl(url)
       if (!candidates.has(normalized)) candidates.set(normalized, { url, sourceType: 'common_path' })

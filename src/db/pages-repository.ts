@@ -1,3 +1,5 @@
+import { csvCell } from '../lib/csv'
+
 export interface PageListFilters {
   competitorId?: string
   pageType?: string
@@ -403,10 +405,6 @@ function mapListRow(row: ListRow): PageListItem {
     isViewed: row.is_viewed === 1,
     isWorthFollowing: row.is_worth_following === 1,
   }
-}
-
-function csvCell(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`
 }
 
 function parseStringArray(value: string | null): string[] {

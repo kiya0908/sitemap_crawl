@@ -130,10 +130,11 @@ export async function runAllEnabledCompetitors(env: Env): Promise<ScanSummary[]>
     try {
       results.push(await runCompetitorScan(env, competitor.id, 'cron'))
     } catch (error) {
-      console.error('Scheduled competitor scan failed', {
+      console.error(JSON.stringify({
+        message: 'Scheduled competitor scan failed',
         competitorId: competitor.id,
         error: error instanceof Error ? error.message : 'Unknown error',
-      })
+      }))
     }
   }
 
