@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "sitemap-crawl",
-  "compatibility_date": "2026-07-16",
+  "compatibility_date": "2026-07-15",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
   "observability": {
@@ -23,7 +23,7 @@
   },
   "vars": {
     "OPENROUTER_MODEL": "deepseek/deepseek-v4-flash",
-    "OPENROUTER_SITE_URL": "",  //未来上线后后台真实域名
+    "OPENROUTER_SITE_URL": "https://sitemap-crawl.2015189466.workers.dev",  //未来上线后后台真实域名，目前使用cloudflare部署域名
     "OPENROUTER_APP_NAME": "Sitemap Crawl",
     "AI_PROMPT_VERSION": "seo-analysis-v1"
   }
