@@ -313,7 +313,7 @@ P7 Cron、部署、安全与最终验收
 - 配置 Cloudflare Worker 环境绑定。
 - 使用 Secret 配置 OpenRouter API Key。
 - 配置每天一次的 Cron Trigger。
-- 默认东京时间上午 9 点，对应 UTC 00:00。
+- 默认中国标准时间上午 9 点，对应 UTC 01:00。
 - 配置 Cloudflare Access，只允许指定账号访问。
 - 检查后台 HTTP 入口和 Cron 入口分离。
 - 验证生产环境日志不泄露密钥。

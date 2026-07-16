@@ -1,5 +1,6 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
+import { BUSINESS_TIME_ZONE } from '../lib/time'
 import { getMonitoredPage, updatePageReview } from '../server/pages.functions'
 
 export const Route = createFileRoute('/pages/$pageId')({
@@ -288,7 +289,7 @@ function formatEnum(value: string): string {
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Tokyo',
+    timeZone: BUSINESS_TIME_ZONE,
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value))

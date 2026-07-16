@@ -1,5 +1,6 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useRef, useState, type FormEvent } from 'react'
+import { BUSINESS_TIME_ZONE } from '../lib/time'
 import {
   createCompetitor,
   getDashboardData,
@@ -217,7 +218,7 @@ function Status({ value }: { value: string }) {
 function formatDate(value: string | null): string {
   if (!value) return '—'
   return new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Tokyo',
+    timeZone: BUSINESS_TIME_ZONE,
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value))

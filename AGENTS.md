@@ -161,7 +161,7 @@ competitor_id + normalized_url
 
 - 所有表结构使用版本化 SQL Migration；
 - 不允许仅依赖运行时自动建表；
-- 所有时间以 UTC 写入，界面按 `Asia/Tokyo` 展示；
+- 所有时间以 UTC 写入，界面按 `Asia/Shanghai` 展示；
 - 核心写入使用事务或幂等 Upsert；
 - 重复执行扫描不得重复创建页面和事件；
 - 竞品删除默认使用软删除；

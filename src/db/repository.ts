@@ -1,5 +1,5 @@
 import { createId } from '../lib/id'
-import { tokyoDayStartUtc } from '../lib/time'
+import { shanghaiDayStartUtc } from '../lib/time'
 import { CompetitorDomainConflictError, ScanAlreadyRunningError } from './errors'
 import { normalizeDomain, normalizeUrl } from '../server/sitemap/normalize'
 import type {
@@ -419,7 +419,7 @@ export class SitemapRepository {
     recentScans: Array<Record<string, string | number | null>>
   }> {
     const competitors = await this.listCompetitors()
-    const today = tokyoDayStartUtc()
+    const today = shanghaiDayStartUtc()
     const sevenDays = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
     const counts = await this.db.prepare(`SELECT

@@ -6,7 +6,7 @@
 - 产品形态：仅供个人使用的私有 SEO 管理后台
 - 部署目标：Cloudflare
 - 文档状态：MVP 已确认
-- 默认业务时区：Asia/Tokyo
+- 默认业务时区：Asia/Shanghai（中国标准时间，UTC+8）
 
 ## 2. 产品背景
 

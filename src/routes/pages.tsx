@@ -1,5 +1,6 @@
 import { Outlet, createFileRoute, useLocation } from '@tanstack/react-router'
 import { useState } from 'react'
+import { BUSINESS_TIME_ZONE } from '../lib/time'
 import { getDashboardData } from '../server/dashboard.functions'
 import { exportMonitoredPages, listMonitoredPages } from '../server/pages.functions'
 
@@ -237,7 +238,7 @@ function pathnameLabel(value: string): string {
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Tokyo',
+    timeZone: BUSINESS_TIME_ZONE,
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value))

@@ -7,7 +7,7 @@
 3. 不保存完整 Sitemap XML 和完整网页 HTML。
 4. 当前状态与历史事件分开保存。
 5. AI 原始结果、人工修订结果分开保存。
-6. 所有时间统一以 UTC 写入数据库，界面按 `Asia/Tokyo` 展示。
+6. 所有时间统一以 UTC 写入数据库，界面按 `Asia/Shanghai` 展示。
 7. 数据库目标为 Cloudflare D1，字段与查询应兼容 SQLite。
 
 ## 2. ERD
