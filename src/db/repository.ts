@@ -1,4 +1,5 @@
 import { createId } from '../lib/id'
+import { CompetitorDomainConflictError } from './errors'
 import { normalizeDomain, normalizeUrl } from '../server/sitemap/normalize'
 import type {
   CompetitorRecord,
@@ -67,6 +68,12 @@ export class SitemapRepository {
     const now = new Date().toISOString()
     const competitorId = createId('cmp')
     const domain = normalizeDomain(input.domain)
+    const existing = await this.findActiveCompetitor(domain)
+
+    if (existing) {
+      throw new CompetitorDomainConflictError(domain)
+    }
+
     const statements: D1PreparedStatement[] = [
       this.db
         .prepare(`INSERT INTO competitors
@@ -85,7 +92,16 @@ export class SitemapRepository {
       )
     }
 
-    await this.db.batch(statements)
+    try {
+      await this.db.batch(statements)
+    } catch (error) {
+      // 预检查和写入之间仍可能有另一请求抢先成功，由数据库唯一索引最终裁决。
+      const concurrentWinner = await this.findActiveCompetitor(domain)
+      if (concurrentWinner) {
+        throw new CompetitorDomainConflictError(domain)
+      }
+      throw error
+    }
     return competitorId
   }
 
@@ -420,6 +436,15 @@ export class SitemapRepository {
     const result = await this.db.prepare(`SELECT id, normalized_url FROM sitemap_sources WHERE competitor_id = ?`)
       .bind(competitorId).all<{ id: string; normalized_url: string }>()
     return new Map(result.results.map((row) => [row.normalized_url, row.id]))
+  }
+
+  private findActiveCompetitor(domain: string): Promise<{ id: string } | null> {
+    return this.db
+      .prepare(`SELECT id FROM competitors
+                WHERE domain = ? AND deleted_at IS NULL
+                LIMIT 1`)
+      .bind(domain)
+      .first<{ id: string }>()
   }
 
   private upsertPageSitemapLink(

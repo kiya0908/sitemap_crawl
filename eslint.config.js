@@ -5,6 +5,7 @@ import tseslint from 'typescript-eslint'
 const ignores = [
   '.output/**',
   '.wrangler/**',
+  'dist/**',
   'node_modules/**',
   'src/routeTree.gen.ts',
   'worker-configuration.d.ts',

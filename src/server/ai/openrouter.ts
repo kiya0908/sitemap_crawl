@@ -9,7 +9,7 @@ import {
 interface OpenRouterOptions {
   apiKey: string
   model: string
-  siteUrl: string
+  siteUrl?: string
   appName: string
   fetchImpl?: typeof fetch
   maxRetries?: number
@@ -59,14 +59,17 @@ export class OpenRouterSeoProvider implements SeoAnalysisProvider {
   }
 
   private async request(input: SeoAnalysisInput, retryNumber: number): Promise<string> {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.options.apiKey}`,
+      'Content-Type': 'application/json',
+      'X-OpenRouter-Title': this.options.appName,
+    }
+    const siteUrl = this.options.siteUrl?.trim()
+    if (siteUrl) headers['HTTP-Referer'] = siteUrl
+
     const response = await this.fetchImpl('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.options.apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': this.options.siteUrl,
-        'X-Title': this.options.appName,
-      },
+      headers,
       body: JSON.stringify({
         model: this.options.model,
         provider: {

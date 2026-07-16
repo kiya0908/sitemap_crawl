@@ -296,6 +296,17 @@ P7 Cron、部署、安全与最终验收
 
 完成生产部署、自动扫描、安全保护和上线前总验收。
 
+### 当前状态（2026-07-16）
+
+- [x] `wrangler.jsonc` 已绑定远程 D1 `sitemap-crawl`。
+- [x] 本地 D1 已应用 `0001_initial.sql` 并完成表结构查询验证。
+- [x] 远程 D1 已应用 `0001_initial.sql` 并完成表结构查询验证。
+- [x] `deepseek/deepseek-v4-flash` 已通过一次本地真实结构化输出冒烟验证。
+- [ ] Worker 生产部署与运行时 D1 查询尚未验证。
+- [ ] OpenRouter 生产 Secret 与 Worker 运行时调用尚未验证。
+- [ ] Cloudflare Access 尚未配置和验证。
+- [ ] Cron 实际触发尚未验证。
+
 ### 工作项
 
 - 创建生产 D1 数据库并执行 Migration。

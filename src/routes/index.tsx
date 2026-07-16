@@ -1,5 +1,5 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import {
   createCompetitor,
   getDashboardData,
@@ -16,28 +16,43 @@ function DashboardPage() {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [isCreating, setIsCreating] = useState(false)
+  const createInFlight = useRef(false)
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setError(null)
+    if (createInFlight.current) return
+
     const form = new FormData(event.currentTarget)
     const sitemapUrls = String(form.get('sitemapUrls') ?? '')
       .split(/\r?\n/)
       .map((value) => value.trim())
       .filter(Boolean)
 
+    createInFlight.current = true
+    setIsCreating(true)
+    setError(null)
+
     try {
-      await createCompetitor({
+      const result = await createCompetitor({
         data: {
           name: String(form.get('name') ?? ''),
           domain: String(form.get('domain') ?? ''),
           sitemapUrls,
         },
       })
+      if (!result.ok) {
+        setError(result.message)
+        return
+      }
+
       event.currentTarget.reset()
       await router.invalidate()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '创建竞品失败')
+    } finally {
+      createInFlight.current = false
+      setIsCreating(false)
     }
   }
 
@@ -142,7 +157,9 @@ function DashboardPage() {
                 placeholder={'https://example.com/sitemap.xml\n每行一个；留空时自动识别'}
               />
             </label>
-            <button className="button primary" type="submit">添加竞品</button>
+            <button className="button primary" type="submit" disabled={isCreating}>
+              {isCreating ? '添加中…' : '添加竞品'}
+            </button>
           </form>
         </section>
       </div>

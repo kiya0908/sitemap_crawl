@@ -47,4 +47,47 @@ MVP 不包含公开注册登录、支付、邮件通知、排名追踪、Ahrefs/
 
 ## 安全说明
 
-仓库为公开仓库。任何 API Key、D1 标识、Cloudflare Access 配置和其他敏感值都必须通过环境变量或 Cloudflare Secrets 管理，不得提交到 Git。
+仓库为公开仓库。任何 API Key、Cloudflare API Token、Cloudflare Access 凭证和其他敏感值都必须通过本地环境变量或 Cloudflare Secrets 管理，不得提交到 Git。
+
+`wrangler.jsonc` 中的 D1 `database_id` 是 Worker 绑定远程数据库所需的资源标识，不是访问凭证；真正的访问权限来自本机 Wrangler OAuth 或 Cloudflare API Token。
+
+## OpenRouter 配置
+
+- `OPENROUTER_MODEL`：模型标识，当前使用 `deepseek/deepseek-v4-flash`。
+- `OPENROUTER_SITE_URL`：可选的应用归属 URL，用于 OpenRouter 的 `HTTP-Referer` 请求头；它不是 API endpoint。未部署时保持为空，部署后再填写后台的真实访问地址。
+- OpenRouter API endpoint 由 Provider 固定为 `https://openrouter.ai/api/v1/chat/completions`。
+- `OPENROUTER_API_KEY` 只允许存放在本地 `.env` 或 Cloudflare Secret 中。
+
+## 本地开发与 D1
+
+首次在本机运行时，先安装依赖并把版本化 Migration 应用到 Wrangler 的本地 D1：
+
+```powershell
+pnpm install
+pnpm run db:migrate:local
+pnpm dev
+```
+
+本地开发默认使用 `.wrangler/` 下的本地数据库，不会读写远程 D1；该目录已被 `.gitignore` 排除。需要确认本地 Migration 状态时运行：
+
+```powershell
+pnpm exec wrangler d1 migrations list sitemap-crawl --local
+```
+
+## 远程 D1 运维
+
+远程操作前先核对当前 Cloudflare 身份和数据库信息，避免在错误账号或错误数据库上执行 Migration：
+
+```powershell
+pnpm exec wrangler whoami
+pnpm exec wrangler d1 info sitemap-crawl
+pnpm exec wrangler d1 migrations list sitemap-crawl --remote
+```
+
+确认无误后，应用尚未执行的远程 Migration：
+
+```powershell
+pnpm run db:migrate:remote
+```
+
+不要给 D1 绑定增加 `remote: true` 作为日常本地开发配置。只有明确需要用本地进程直接操作远程数据时才临时启用远程开发，并应先评估不可逆的数据修改风险。

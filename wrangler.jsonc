@@ -14,13 +14,16 @@
     {
       "binding": "DB",
       "database_name": "sitemap-crawl",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "be8ed060-41b0-43d9-a3cc-928ac9a723b9",
       "migrations_dir": "migrations"
     }
   ],
+  "secrets": {
+    "required": ["OPENROUTER_API_KEY"]
+  },
   "vars": {
-    "OPENROUTER_MODEL": "openai/gpt-4.1-mini",
-    "OPENROUTER_SITE_URL": "https://example.com",
+    "OPENROUTER_MODEL": "deepseek/deepseek-v4-flash",
+    "OPENROUTER_SITE_URL": "",  //未来上线后后台真实域名
     "OPENROUTER_APP_NAME": "Sitemap Crawl",
     "AI_PROMPT_VERSION": "seo-analysis-v1"
   }
