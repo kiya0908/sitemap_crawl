@@ -53,9 +53,9 @@ export class PagePipelineRepository {
       statements.push(
         this.db.prepare(`INSERT INTO page_seo_data
           (page_id, http_status, final_url, redirect_chain_json, content_type, title, meta_description,
-           h1, h2_json, canonical_url, robots_meta, page_language, content_excerpt, content_hash,
+           h1, h2_json, canonical_url, robots_meta, page_language, content_excerpt,
            fetch_status, fetch_error, fetched_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success', NULL, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success', NULL, ?, ?)
           ON CONFLICT(page_id) DO UPDATE SET
             http_status = excluded.http_status,
             final_url = excluded.final_url,
@@ -69,7 +69,6 @@ export class PagePipelineRepository {
             robots_meta = excluded.robots_meta,
             page_language = excluded.page_language,
             content_excerpt = excluded.content_excerpt,
-            content_hash = excluded.content_hash,
             fetch_status = 'success', fetch_error = NULL,
             fetched_at = excluded.fetched_at, updated_at = excluded.updated_at`)
           .bind(
@@ -86,7 +85,6 @@ export class PagePipelineRepository {
             result.robotsMeta,
             result.pageLanguage,
             result.contentExcerpt,
-            result.contentHash,
             now,
             now,
           ),

@@ -1,0 +1,1 @@
+export const SEO_CONTENT_EXCERPT_MAX_CHARS = 8_000

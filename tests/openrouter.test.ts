@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SEO_CONTENT_EXCERPT_MAX_CHARS } from '../src/lib/seo-content'
 import { OpenRouterSeoProvider } from '../src/server/ai/openrouter'
 
 const validAnalysis = {
@@ -30,12 +31,7 @@ describe('OpenRouterSeoProvider', () => {
     const fetchMock = (async (url: string | URL | Request, init?: RequestInit) => {
       capturedUrl = String(url)
       capturedInit = init
-      return new Response(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify(validAnalysis) } }],
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
+      return successResponse()
     }) as typeof fetch
 
     const provider = new OpenRouterSeoProvider({
@@ -66,6 +62,45 @@ describe('OpenRouterSeoProvider', () => {
     expect(analysis.result).toEqual(validAnalysis)
   })
 
+  it('limits the content excerpt sent to OpenRouter while preserving other SEO evidence', async () => {
+    let capturedInit: RequestInit | undefined
+    const fetchMock = (async (_url: string | URL | Request, init?: RequestInit) => {
+      capturedInit = init
+      return successResponse()
+    }) as typeof fetch
+    const provider = new OpenRouterSeoProvider({
+      apiKey: 'test-key',
+      model: 'deepseek/deepseek-v4-flash',
+      appName: 'Sitemap Crawl',
+      fetchImpl: fetchMock,
+    })
+
+    await provider.analyze({
+      ...input,
+      contentExcerpt: 'x'.repeat(SEO_CONTENT_EXCERPT_MAX_CHARS + 500),
+    })
+
+    const body = JSON.parse(String(capturedInit?.body)) as {
+      messages: Array<{ role: string; content: string }>
+    }
+    const userMessage = body.messages.find((message) => message.role === 'user')
+    const payload = JSON.parse(userMessage?.content ?? '{}') as {
+      title?: string
+      metaDescription?: string
+      h1?: string
+      h2?: string[]
+      pageLanguage?: string
+      contentExcerpt?: string
+    }
+
+    expect(payload.contentExcerpt).toHaveLength(SEO_CONTENT_EXCERPT_MAX_CHARS)
+    expect(payload.title).toBe(input.title)
+    expect(payload.metaDescription).toBe(input.metaDescription)
+    expect(payload.h1).toBe(input.h1)
+    expect(payload.h2).toEqual(input.h2)
+    expect(payload.pageLanguage).toBe(input.pageLanguage)
+  })
+
   it('rejects an oversized API response without buffering it indefinitely', async () => {
     const fetchMock = (async () => new Response('x'.repeat(300_000), {
       status: 200,
@@ -82,3 +117,12 @@ describe('OpenRouterSeoProvider', () => {
     await expect(provider.analyze(input)).rejects.toThrow('Response exceeds 256000 bytes')
   })
 })
+
+function successResponse(): Response {
+  return new Response(JSON.stringify({
+    choices: [{ message: { content: JSON.stringify(validAnalysis) } }],
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}

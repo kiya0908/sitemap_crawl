@@ -1,4 +1,4 @@
-import { sha256 } from '../../lib/hash'
+import { SEO_CONTENT_EXCERPT_MAX_CHARS } from '../../lib/seo-content'
 import {
   OutboundRedirectLimitError,
   ResponseBodyTimeoutError,
@@ -21,7 +21,6 @@ export interface PageSeoResult {
   robotsMeta: string | null
   pageLanguage: string | null
   contentExcerpt: string | null
-  contentHash: string | null
   errorCode: string | null
   errorMessage: string | null
 }
@@ -41,7 +40,7 @@ export async function fetchPageSeo(options: FetchPageOptions): Promise<PageSeoRe
   const timeoutMs = options.timeoutMs ?? 15_000
   const maxResponseBytes = options.maxResponseBytes ?? 1_500_000
   const maxRedirects = options.maxRedirects ?? 5
-  const maxExcerptChars = options.maxExcerptChars ?? 10_000
+  const maxExcerptChars = options.maxExcerptChars ?? SEO_CONTENT_EXCERPT_MAX_CHARS
   const redirectChain: string[] = []
   let currentUrl = options.url
 
@@ -89,7 +88,6 @@ export async function fetchPageSeo(options: FetchPageOptions): Promise<PageSeoRe
       redirectChain,
       contentType,
       ...extracted,
-      contentHash: await sha256(extracted.contentExcerpt ?? ''),
       errorCode: null,
       errorMessage: null,
     }
@@ -112,7 +110,7 @@ export async function fetchPageSeo(options: FetchPageOptions): Promise<PageSeoRe
 }
 
 function extractSeo(html: string, baseUrl: string, maxExcerptChars: number): Omit<PageSeoResult,
-  'status' | 'httpStatus' | 'finalUrl' | 'redirectChain' | 'contentType' | 'contentHash' | 'errorCode' | 'errorMessage'> {
+  'status' | 'httpStatus' | 'finalUrl' | 'redirectChain' | 'contentType' | 'errorCode' | 'errorMessage'> {
   const title = firstTagText(html, 'title')
   const h1 = firstTagText(html, 'h1')
   const h2 = allTagText(html, 'h2').slice(0, 30)
@@ -210,7 +208,6 @@ function emptyResult(input: Pick<PageSeoResult,
     robotsMeta: null,
     pageLanguage: null,
     contentExcerpt: null,
-    contentHash: null,
   }
 }
 
