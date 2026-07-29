@@ -23,7 +23,14 @@ const updateCompetitorSchema = createCompetitorSchema.extend({
 })
 
 export const getDashboardData = createServerFn({ method: 'GET' }).handler(async () => {
-  return new SitemapRepository(env.DB).getDashboard()
+  const sitemapRepository = new SitemapRepository(env.DB)
+  const managementRepository = new CompetitorManagementRepository(env.DB)
+  const [competitors, metrics] = await Promise.all([
+    sitemapRepository.listCompetitors(),
+    managementRepository.getActiveDashboardMetrics(),
+  ])
+
+  return { competitors, ...metrics }
 })
 
 export const getCompetitorConfiguration = createServerFn({ method: 'GET' })
