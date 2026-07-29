@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SEO_CONTENT_EXCERPT_MAX_CHARS } from '../../lib/seo-content'
 import { readResponseTextLimited } from '../security/safe-fetch'
 import type { SeoAnalysisProvider } from './provider'
 import {
@@ -102,7 +103,7 @@ export class OpenRouterSeoProvider implements SeoAnalysisProvider {
               h1: input.h1,
               h2: input.h2.slice(0, 20),
               pageLanguage: input.pageLanguage,
-              contentExcerpt: input.contentExcerpt?.slice(0, 8_000) ?? null,
+              contentExcerpt: input.contentExcerpt?.slice(0, SEO_CONTENT_EXCERPT_MAX_CHARS) ?? null,
             }),
           },
         ],
