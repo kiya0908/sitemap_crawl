@@ -5,6 +5,7 @@ import {
   Scripts,
   createRootRoute,
 } from '@tanstack/react-router'
+import competitorStylesUrl from '../competitor-management.css?url'
 import navStylesUrl from '../global-nav.css?url'
 import stylesUrl from '../styles.css?url'
 
@@ -22,6 +23,7 @@ export const Route = createRootRoute({
     links: [
       { rel: 'stylesheet', href: stylesUrl },
       { rel: 'stylesheet', href: navStylesUrl },
+      { rel: 'stylesheet', href: competitorStylesUrl },
     ],
   }),
   component: RootComponent,
