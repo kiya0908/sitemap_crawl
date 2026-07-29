@@ -3,9 +3,21 @@ import { useRef, useState, type FormEvent } from 'react'
 import { BUSINESS_TIME_ZONE } from '../lib/time'
 import {
   createCompetitor,
+  deleteCompetitor,
+  getCompetitorConfiguration,
   getDashboardData,
   triggerCompetitorScan,
+  updateCompetitor,
 } from '../server/dashboard.functions'
+
+interface EditingCompetitor {
+  id: string
+  name: string
+  domain: string
+  isEnabled: boolean
+  baselineEstablished: boolean
+  manualSitemapUrls: string[]
+}
 
 export const Route = createFileRoute('/')({
   loader: () => getDashboardData(),
@@ -18,6 +30,8 @@ function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
+  const [editing, setEditing] = useState<EditingCompetitor | null>(null)
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
   const createInFlight = useRef(false)
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
@@ -25,10 +39,7 @@ function DashboardPage() {
     if (createInFlight.current) return
 
     const form = new FormData(event.currentTarget)
-    const sitemapUrls = String(form.get('sitemapUrls') ?? '')
-      .split(/\r?\n/)
-      .map((value) => value.trim())
-      .filter(Boolean)
+    const sitemapUrls = parseSitemapUrls(form.get('sitemapUrls'))
 
     createInFlight.current = true
     setIsCreating(true)
@@ -70,6 +81,79 @@ function DashboardPage() {
     }
   }
 
+  async function handleStartEdit(competitorId: string) {
+    setBusyId(competitorId)
+    setError(null)
+    try {
+      const configuration = await getCompetitorConfiguration({ data: { competitorId } })
+      if (!configuration) {
+        setError('竞品不存在或已经删除。')
+        return
+      }
+      setEditing(configuration)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '加载竞品配置失败')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!editing || isSavingEdit) return
+
+    const form = new FormData(event.currentTarget)
+    setIsSavingEdit(true)
+    setError(null)
+
+    try {
+      const result = await updateCompetitor({
+        data: {
+          competitorId: editing.id,
+          name: String(form.get('name') ?? ''),
+          domain: String(form.get('domain') ?? editing.domain),
+          isEnabled: form.get('isEnabled') === 'on',
+          sitemapUrls: parseSitemapUrls(form.get('sitemapUrls')),
+        },
+      })
+
+      if (!result.ok) {
+        setError(result.message)
+        return
+      }
+
+      setEditing(null)
+      await router.invalidate()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '修改竞品失败')
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
+  async function handleDelete(competitorId: string, competitorName: string) {
+    const confirmed = window.confirm(
+      `确定删除“${competitorName}”吗？\n\n该竞品将停止监控并从列表中隐藏，历史扫描和页面数据会保留。`,
+    )
+    if (!confirmed) return
+
+    setBusyId(competitorId)
+    setError(null)
+    try {
+      const result = await deleteCompetitor({ data: { competitorId } })
+      if (!result.ok) {
+        setError(result.message)
+        return
+      }
+      if (editing?.id === competitorId) setEditing(null)
+      await router.invalidate()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '删除竞品失败')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="page-header">
@@ -106,6 +190,7 @@ function DashboardPage() {
                 <tr>
                   <th>竞品</th>
                   <th>域名</th>
+                  <th>状态</th>
                   <th>基线</th>
                   <th>最近状态</th>
                   <th>最近扫描</th>
@@ -114,23 +199,43 @@ function DashboardPage() {
               </thead>
               <tbody>
                 {data.competitors.length === 0 ? (
-                  <tr><td colSpan={6} className="empty">还没有竞品，请先添加。</td></tr>
+                  <tr><td colSpan={7} className="empty">还没有竞品，请先添加。</td></tr>
                 ) : data.competitors.map((competitor) => (
                   <tr key={competitor.id}>
                     <td><strong>{competitor.name}</strong></td>
                     <td>{competitor.domain}</td>
+                    <td><Status value={competitor.isEnabled ? 'enabled' : 'paused'} /></td>
                     <td>{competitor.baselineEstablished ? '已建立' : '未建立'}</td>
                     <td><Status value={competitor.lastScanStatus ?? 'not_started'} /></td>
                     <td>{formatDate(competitor.lastScannedAt)}</td>
                     <td className="align-right">
-                      <button
-                        className="button secondary"
-                        type="button"
-                        disabled={busyId !== null}
-                        onClick={() => handleScan(competitor.id)}
-                      >
-                        {busyId === competitor.id ? '扫描中…' : '立即扫描'}
-                      </button>
+                      <div className="row-actions">
+                        <button
+                          className="button secondary"
+                          type="button"
+                          disabled={busyId !== null || !competitor.isEnabled}
+                          title={competitor.isEnabled ? undefined : '请先编辑并启用该竞品'}
+                          onClick={() => handleScan(competitor.id)}
+                        >
+                          {busyId === competitor.id ? '处理中…' : '立即扫描'}
+                        </button>
+                        <button
+                          className="button secondary"
+                          type="button"
+                          disabled={busyId !== null}
+                          onClick={() => handleStartEdit(competitor.id)}
+                        >
+                          编辑
+                        </button>
+                        <button
+                          className="button danger"
+                          type="button"
+                          disabled={busyId !== null}
+                          onClick={() => handleDelete(competitor.id, competitor.name)}
+                        >
+                          删除
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -139,30 +244,75 @@ function DashboardPage() {
           </div>
         </section>
 
-        <section className="panel compact-panel">
-          <h2>添加竞品</h2>
-          <form className="form-stack" onSubmit={handleCreate}>
-            <label>
-              竞品名称
-              <input name="name" required maxLength={100} placeholder="例如：Competitor A" />
-            </label>
-            <label>
-              域名
-              <input name="domain" required placeholder="example.com" />
-            </label>
-            <label>
-              Sitemap URL
-              <textarea
-                name="sitemapUrls"
-                rows={5}
-                placeholder={'https://example.com/sitemap.xml\n每行一个；留空时自动识别'}
-              />
-            </label>
-            <button className="button primary" type="submit" disabled={isCreating}>
-              {isCreating ? '添加中…' : '添加竞品'}
-            </button>
-          </form>
-        </section>
+        {editing ? (
+          <section className="panel compact-panel" key={editing.id}>
+            <div className="side-panel-heading">
+              <div>
+                <h2>编辑竞品</h2>
+                <p>{editing.baselineEstablished ? '已建立基线，域名不可直接修改。' : '尚未建立基线，可以修改域名。'}</p>
+              </div>
+              <button className="text-button" type="button" onClick={() => setEditing(null)}>取消</button>
+            </div>
+            <form className="form-stack" onSubmit={handleUpdate}>
+              <label>
+                竞品名称
+                <input name="name" required maxLength={100} defaultValue={editing.name} />
+              </label>
+              <label>
+                域名
+                <input
+                  name="domain"
+                  required
+                  readOnly={editing.baselineEstablished}
+                  defaultValue={editing.domain}
+                  aria-describedby={editing.baselineEstablished ? 'domain-lock-help' : undefined}
+                />
+                {editing.baselineEstablished ? <small id="domain-lock-help">如需更换网站域名，请删除后重新添加。</small> : null}
+              </label>
+              <label className="checkbox-label">
+                <input name="isEnabled" type="checkbox" defaultChecked={editing.isEnabled} />
+                启用自动监控
+              </label>
+              <label>
+                手动 Sitemap URL
+                <textarea
+                  name="sitemapUrls"
+                  rows={6}
+                  defaultValue={editing.manualSitemapUrls.join('\n')}
+                  placeholder={'https://example.com/sitemap.xml\n每行一个；留空时扫描会尝试自动识别'}
+                />
+              </label>
+              <button className="button primary" type="submit" disabled={isSavingEdit}>
+                {isSavingEdit ? '保存中…' : '保存修改'}
+              </button>
+            </form>
+          </section>
+        ) : (
+          <section className="panel compact-panel">
+            <h2>添加竞品</h2>
+            <form className="form-stack" onSubmit={handleCreate}>
+              <label>
+                竞品名称
+                <input name="name" required maxLength={100} placeholder="例如：Competitor A" />
+              </label>
+              <label>
+                域名
+                <input name="domain" required placeholder="example.com" />
+              </label>
+              <label>
+                Sitemap URL
+                <textarea
+                  name="sitemapUrls"
+                  rows={5}
+                  placeholder={'https://example.com/sitemap.xml\n每行一个；留空时自动识别'}
+                />
+              </label>
+              <button className="button primary" type="submit" disabled={isCreating}>
+                {isCreating ? '添加中…' : '添加竞品'}
+              </button>
+            </form>
+          </section>
+        )}
       </div>
 
       <section className="panel">
@@ -213,6 +363,13 @@ function Metric({ label, value }: { label: string; value: number }) {
 
 function Status({ value }: { value: string }) {
   return <span className={`status status-${value}`}>{value.replaceAll('_', ' ')}</span>
+}
+
+function parseSitemapUrls(value: FormDataEntryValue | null): string[] {
+  return String(value ?? '')
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean)
 }
 
 function formatDate(value: string | null): string {
