@@ -1,3 +1,4 @@
+import { retentionSchema } from './retention-schema'
 import { createId } from '../lib/id'
 import type { SeoAnalysisResult } from '../server/ai/schemas'
 import type { PageSeoResult } from '../server/page-fetch/fetch-page'
@@ -9,7 +10,10 @@ export interface PagePipelineTarget {
 }
 
 export class PagePipelineRepository {
+  private schema?: ReturnType<typeof retentionSchema>
   constructor(private readonly db: D1Database) {}
+
+  private getSchema() { return this.schema ??= retentionSchema(this.db) }
 
   async getTargets(pageIds: string[]): Promise<PagePipelineTarget[]> {
     if (pageIds.length === 0) return []
@@ -50,12 +54,13 @@ export class PagePipelineRepository {
     ]
 
     if (status === 'success') {
+      const schema = await this.getSchema()
       statements.push(
         this.db.prepare(`INSERT INTO page_seo_data
           (page_id, http_status, final_url, redirect_chain_json, content_type, title, meta_description,
            h1, h2_json, canonical_url, robots_meta, page_language, content_excerpt,
-           fetch_status, fetch_error, fetched_at, updated_at, content_fetched_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success', NULL, ?, ?, ?)
+           fetch_status, fetch_error, fetched_at, updated_at${schema.contentFetched ? ', content_fetched_at' : ''})
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success', NULL, ?, ?${schema.contentFetched ? ', ?' : ''})
           ON CONFLICT(page_id) DO UPDATE SET
             http_status = excluded.http_status,
             final_url = excluded.final_url,
@@ -69,8 +74,9 @@ export class PagePipelineRepository {
             robots_meta = excluded.robots_meta,
             page_language = excluded.page_language,
             content_excerpt = excluded.content_excerpt,
-            fetch_status = 'success', fetch_error = NULL, expired_at = NULL,
-            content_fetched_at = excluded.fetched_at,
+            fetch_status = 'success', fetch_error = NULL,
+            ${schema.seoExpired ? 'expired_at = NULL,' : ''}
+            ${schema.contentFetched ? 'content_fetched_at = excluded.fetched_at,' : ''}
             fetched_at = excluded.fetched_at, updated_at = excluded.updated_at`)
           .bind(
             pageId,
@@ -88,7 +94,7 @@ export class PagePipelineRepository {
             result.contentExcerpt,
             now,
             now,
-            now,
+            ...(schema.contentFetched ? [now] : []),
           ),
       )
 
@@ -214,9 +220,10 @@ export class PagePipelineRepository {
     pageLanguage: string | null
     contentExcerpt: string | null
   } | null> {
+    const schema = await this.getSchema()
     const row = await this.db.prepare(`SELECT p.current_url, s.title, s.meta_description, s.h1, s.h2_json,
       s.page_language, s.content_excerpt FROM pages p JOIN page_seo_data s ON s.page_id = p.id
-      WHERE p.id = ? AND s.fetch_status = 'success' AND s.expired_at IS NULL`).bind(pageId).first<{
+      WHERE p.id = ? AND s.fetch_status = 'success' ${schema.seoExpired ? 'AND s.expired_at IS NULL' : ''}`).bind(pageId).first<{
         current_url: string
         title: string | null
         meta_description: string | null

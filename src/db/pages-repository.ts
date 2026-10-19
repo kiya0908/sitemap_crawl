@@ -1,3 +1,4 @@
+import { retentionSchema } from './retention-schema'
 import { csvCell } from '../lib/csv'
 
 export interface PageListFilters {
@@ -117,9 +118,13 @@ interface ListRow {
 }
 
 export class PagesRepository {
+  private schema?: ReturnType<typeof retentionSchema>
   constructor(private readonly db: D1Database) {}
 
+  private getSchema() { return this.schema ??= retentionSchema(this.db) }
+
   async listPages(filters: PageListFilters): Promise<{ items: PageListItem[]; total: number; page: number; pageSize: number }> {
+    const schema = await this.getSchema()
     const page = Math.max(1, filters.page ?? 1)
     const pageSize = Math.min(100, Math.max(1, filters.pageSize ?? 20))
     const where: string[] = [
@@ -170,7 +175,7 @@ export class PagesRepository {
       LEFT JOIN page_analyses pa ON pa.id = (
         SELECT latest.id FROM page_analyses latest
         WHERE latest.page_id = p.id
-        ORDER BY CASE WHEN latest.expired_at IS NOT NULL THEN 2 WHEN latest.status = 'success' THEN 0 ELSE 1 END,
+        ORDER BY CASE WHEN ${schema.analysisExpired ? 'latest.expired_at IS NOT NULL' : '0'} THEN 2 WHEN latest.status = 'success' THEN 0 ELSE 1 END,
                  COALESCE(latest.analyzed_at, latest.created_at) DESC
         LIMIT 1
       )
@@ -184,8 +189,8 @@ export class PagesRepository {
     const rows = await this.db
       .prepare(`SELECT
         p.id, p.competitor_id, c.name AS competitor_name, p.current_url, seo.title,
-        p.first_seen_at, p.lifecycle_status, CASE WHEN seo.expired_at IS NOT NULL AND seo.fetch_status NOT IN ('pending', 'fetching') THEN 'expired' ELSE seo.fetch_status END AS fetch_status,
-        CASE WHEN pa.expired_at IS NOT NULL THEN 'expired' ELSE pa.status END AS analysis_status, pa.page_type AS ai_page_type,
+        p.first_seen_at, p.lifecycle_status, CASE WHEN ${schema.seoExpired ? 'seo.expired_at IS NOT NULL' : '0'} AND seo.fetch_status NOT IN ('pending', 'fetching') THEN 'expired' ELSE seo.fetch_status END AS fetch_status,
+        CASE WHEN ${schema.analysisExpired ? 'pa.expired_at IS NOT NULL' : '0'} THEN 'expired' ELSE pa.status END AS analysis_status, pa.page_type AS ai_page_type,
         pa.primary_keyword AS ai_primary_keyword, pa.search_intent AS ai_search_intent,
         pr.review_status, pr.is_viewed, pr.is_worth_following,
         pr.manual_page_type, pr.manual_primary_keyword, pr.manual_search_intent
@@ -204,13 +209,14 @@ export class PagesRepository {
   }
 
   async getPageDetail(pageId: string): Promise<PageDetail | null> {
+    const schema = await this.getSchema()
     const row = await this.db.prepare(`SELECT
       p.id, p.competitor_id, c.name AS competitor_name, p.original_url, p.normalized_url,
       p.current_url, p.lifecycle_status, p.first_seen_at, p.last_seen_at, p.sitemap_lastmod,
       seo.http_status, seo.final_url, seo.redirect_chain_json, seo.content_type, seo.title,
       seo.meta_description, seo.h1, seo.h2_json, seo.canonical_url, seo.robots_meta,
-      seo.page_language, seo.content_excerpt, CASE WHEN seo.expired_at IS NOT NULL AND seo.fetch_status NOT IN ('pending', 'fetching') THEN 'expired' ELSE seo.fetch_status END AS fetch_status, seo.fetch_error, seo.fetched_at,
-      CASE WHEN pa.expired_at IS NOT NULL THEN 'expired' ELSE pa.status END AS analysis_status, pa.provider, pa.model, pa.prompt_version, pa.page_type,
+      seo.page_language, seo.content_excerpt, CASE WHEN ${schema.seoExpired ? 'seo.expired_at IS NOT NULL' : '0'} AND seo.fetch_status NOT IN ('pending', 'fetching') THEN 'expired' ELSE seo.fetch_status END AS fetch_status, seo.fetch_error, seo.fetched_at,
+      CASE WHEN ${schema.analysisExpired ? 'pa.expired_at IS NOT NULL' : '0'} THEN 'expired' ELSE pa.status END AS analysis_status, pa.provider, pa.model, pa.prompt_version, pa.page_type,
       pa.primary_topic, pa.primary_keyword, pa.secondary_keywords_json, pa.search_intent,
       pa.product_line, pa.summary, pa.evidence_json, pa.confidence, pa.error_message,
       pa.analyzed_at,
@@ -224,7 +230,7 @@ export class PagesRepository {
       LEFT JOIN page_analyses pa ON pa.id = (
         SELECT latest.id FROM page_analyses latest
         WHERE latest.page_id = p.id
-        ORDER BY CASE WHEN latest.expired_at IS NOT NULL THEN 2 WHEN latest.status = 'success' THEN 0 ELSE 1 END,
+        ORDER BY CASE WHEN ${schema.analysisExpired ? 'latest.expired_at IS NOT NULL' : '0'} THEN 2 WHEN latest.status = 'success' THEN 0 ELSE 1 END,
                  COALESCE(latest.analyzed_at, latest.created_at) DESC
         LIMIT 1
       )

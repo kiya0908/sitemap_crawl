@@ -76,6 +76,29 @@ function fixture(path = ':memory:') {
 }
 
 describe('seven-day retention', () => {
+  it.each(['legacy', 'partial'])('keeps lists, CSV, detail and fetch/analysis input working on %s schema', async (schema) => {
+    const f = fixture(); f.page('legacy')
+    f.sql.exec('ALTER TABLE page_seo_data DROP COLUMN expired_at; ALTER TABLE page_analyses DROP COLUMN expired_at;')
+    if (schema === 'legacy') f.sql.exec('ALTER TABLE page_seo_data DROP COLUMN content_fetched_at')
+    const pages = new PagesRepository(f.d1)
+    expect((await pages.listPages({})).items[0]?.analysisStatus).toBe('success')
+    expect(await pages.exportCsv({})).toContain('https://example.com/legacy')
+    expect((await pages.getPageDetail('legacy'))?.seo.contentExcerpt).toBe('old body')
+    const pipeline = new PagePipelineRepository(f.d1)
+    const attempt = await pipeline.createFetchAttempt('legacy', 'run', 2)
+    const result: PageSeoResult = { status: 'success', httpStatus: 200, finalUrl: 'https://example.com/legacy',
+      redirectChain: [], contentType: 'text/html', title: 'new title', metaDescription: null, h1: null, h2: [],
+      canonicalUrl: null, robotsMeta: null, pageLanguage: null, contentExcerpt: 'new body', errorCode: null, errorMessage: null }
+    await pipeline.saveFetchResult('legacy', attempt, result, 10)
+    expect((await pipeline.getSeoInput('legacy'))?.contentExcerpt).toBe('new body')
+    expect(f.sql.prepare('PRAGMA foreign_key_check').all()).toEqual([])
+    // A new request after the separately applied migration detects the new capabilities.
+    f.sql.exec('ALTER TABLE page_seo_data ADD COLUMN expired_at TEXT; ALTER TABLE page_analyses ADD COLUMN expired_at TEXT;')
+    f.sql.exec("UPDATE page_seo_data SET expired_at = '2026-10-19T12:00:00.000Z'")
+    expect((await new PagesRepository(f.d1).getPageDetail('legacy'))?.seo.fetchStatus).toBe('expired')
+    expect(await new PagePipelineRepository(f.d1).getSeoInput('legacy')).toBeNull()
+  })
+
   it('computes a deterministic UTC cutoff and rejects ambiguous or impossible inputs', () => {
     expect(retentionConfig({ now }).cutoff).toBe(cutoff)
     expect(retentionConfig({ now: '2026-03-09T00:00:00.000Z', days: 7 }).cutoff).toBe('2026-03-02T00:00:00.000Z')
