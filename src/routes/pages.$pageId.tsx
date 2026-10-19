@@ -77,6 +77,10 @@ function PageDetailPage() {
 
       {message ? <div className="alert neutral-alert" role="status">{message}</div> : null}
 
+      <div role="status" className="alert neutral-alert" hidden={page.seo.fetchStatus !== 'expired' && page.analysis.status !== 'expired'}>
+        正文或分析明细已按保留策略过期清理，网址和人工复核仍保留。这不是抓取故障；系统不会自动重新抓取这些旧页面。
+      </div>
+
       <div className="detail-grid">
         <div className="detail-main">
           <DetailSection title="页面 SEO 信息">
@@ -284,7 +288,7 @@ function pathnameLabel(value: string): string {
 }
 
 function formatEnum(value: string): string {
-  return value.replaceAll('_', ' ')
+  return value === 'expired' ? '已过期（保留策略）' : value.replaceAll('_', ' ')
 }
 
 function formatDate(value: string): string {

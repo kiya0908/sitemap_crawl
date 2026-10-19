@@ -54,8 +54,8 @@ export class PagePipelineRepository {
         this.db.prepare(`INSERT INTO page_seo_data
           (page_id, http_status, final_url, redirect_chain_json, content_type, title, meta_description,
            h1, h2_json, canonical_url, robots_meta, page_language, content_excerpt,
-           fetch_status, fetch_error, fetched_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success', NULL, ?, ?)
+           fetch_status, fetch_error, fetched_at, updated_at, content_fetched_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success', NULL, ?, ?, ?)
           ON CONFLICT(page_id) DO UPDATE SET
             http_status = excluded.http_status,
             final_url = excluded.final_url,
@@ -69,7 +69,8 @@ export class PagePipelineRepository {
             robots_meta = excluded.robots_meta,
             page_language = excluded.page_language,
             content_excerpt = excluded.content_excerpt,
-            fetch_status = 'success', fetch_error = NULL,
+            fetch_status = 'success', fetch_error = NULL, expired_at = NULL,
+            content_fetched_at = excluded.fetched_at,
             fetched_at = excluded.fetched_at, updated_at = excluded.updated_at`)
           .bind(
             pageId,
@@ -85,6 +86,7 @@ export class PagePipelineRepository {
             result.robotsMeta,
             result.pageLanguage,
             result.contentExcerpt,
+            now,
             now,
             now,
           ),
@@ -214,7 +216,7 @@ export class PagePipelineRepository {
   } | null> {
     const row = await this.db.prepare(`SELECT p.current_url, s.title, s.meta_description, s.h1, s.h2_json,
       s.page_language, s.content_excerpt FROM pages p JOIN page_seo_data s ON s.page_id = p.id
-      WHERE p.id = ? AND s.fetch_status = 'success'`).bind(pageId).first<{
+      WHERE p.id = ? AND s.fetch_status = 'success' AND s.expired_at IS NULL`).bind(pageId).first<{
         current_url: string
         title: string | null
         meta_description: string | null

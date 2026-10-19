@@ -225,7 +225,7 @@ function optionalObjectValue<Key extends string>(key: Key, value: string | undef
 }
 
 function formatEnum(value: string): string {
-  return value.replaceAll('_', ' ')
+  return value === 'expired' ? '已过期（保留策略）' : value.replaceAll('_', ' ')
 }
 
 function pathnameLabel(value: string): string {
