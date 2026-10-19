@@ -106,6 +106,12 @@ export class SitemapRepository {
     return competitorId
   }
 
+  async getMonitorPathPrefix(competitorId: string): Promise<string | null> {
+    const rule = await this.db.prepare('SELECT path_prefix FROM competitor_monitor_rules WHERE competitor_id = ?')
+      .bind(competitorId).first<{ path_prefix: string }>()
+    return rule?.path_prefix ?? null
+  }
+
   async listEnabledSitemaps(competitorId: string): Promise<SitemapSourceRecord[]> {
     const result = await this.db
       .prepare(`SELECT id, competitor_id, url, normalized_url, source_type, is_enabled, parent_source_id

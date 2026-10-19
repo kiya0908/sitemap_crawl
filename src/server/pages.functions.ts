@@ -1,3 +1,4 @@
+import { pageFiltersSchema } from '../lib/page-filters'
 import { createServerFn } from '@tanstack/react-start'
 import { env } from 'cloudflare:workers'
 import { z } from 'zod'
@@ -9,17 +10,6 @@ import {
   type PageListItem,
 } from '../db/pages-repository'
 
-const pageFiltersSchema = z.object({
-  competitorId: z.string().max(100).optional(),
-  pageType: z.string().max(100).optional(),
-  searchIntent: z.string().max(100).optional(),
-  reviewStatus: z.string().max(100).optional(),
-  query: z.string().trim().max(500).optional(),
-  dateFrom: z.string().datetime().optional(),
-  dateTo: z.string().datetime().optional(),
-  page: z.number().int().min(1).max(10_000).default(1),
-  pageSize: z.number().int().min(1).max(100).default(20),
-})
 
 const pageIdSchema = z.object({
   pageId: z.string().min(1).max(100),
@@ -39,7 +29,13 @@ const updateReviewSchema = z.object({
 
 export const listMonitoredPages = createServerFn({ method: 'GET' })
   .validator(pageFiltersSchema)
-  .handler(async ({ data }) => new PagesRepository(env.DB).listPages(cleanFilters(data)))
+  .handler(async ({ data }) => {
+    const repository = new PagesRepository(env.DB)
+    const pages = await repository.listPages(cleanFilters(data))
+    const monitor = data.competitorId ? await repository.getMonitorContext(data.competitorId) : null
+    if (data.competitorId && !monitor) throw new Error('所选监测目标不存在或已删除')
+    return { ...pages, monitor }
+  })
 
 export const getMonitoredPageSerialized = createServerFn({ method: 'GET' })
   .validator(pageIdSchema)
@@ -96,22 +92,27 @@ async function loadAllFilteredPages(repository: PagesRepository, filters: PageLi
 function buildCsv(items: PageListItem[]): string {
   const rows = [
     [
+      'Discovered At (UTC)',
       'First Seen',
       'Competitor',
-      'URL',
+      'Discovered URL',
+      'Current URL',
       'Title',
       'Lifecycle Status',
       'Fetch Status',
       'Analysis Status',
       'Page Type',
       'Primary Keyword (Inferred)',
+      'Keyword Source',
       'Search Intent',
       'Review Status',
       'Worth Following',
     ],
     ...items.map((item) => [
+      item.discoveredAt,
       item.firstSeenAt,
       item.competitorName,
+      item.discoveredUrl,
       item.url,
       item.title ?? '',
       item.lifecycleStatus,
@@ -119,6 +120,7 @@ function buildCsv(items: PageListItem[]): string {
       item.analysisStatus ?? '',
       item.pageType ?? '',
       item.primaryKeyword ?? '',
+      item.keywordSource,
       item.searchIntent ?? '',
       item.reviewStatus,
       item.isWorthFollowing ? 'yes' : 'no',
@@ -140,6 +142,9 @@ function cleanFilters(input: z.infer<typeof pageFiltersSchema>): PageListFilters
   }
 
   if (input.competitorId) filters.competitorId = input.competitorId
+  if (input.pathPrefix) filters.pathPrefix = input.pathPrefix
+  if (input.discoveredFrom) filters.discoveredFrom = input.discoveredFrom
+  if (input.discoveredBefore) filters.discoveredBefore = input.discoveredBefore
   if (input.pageType) filters.pageType = input.pageType
   if (input.searchIntent) filters.searchIntent = input.searchIntent
   if (input.reviewStatus) filters.reviewStatus = input.reviewStatus

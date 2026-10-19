@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SEO_CONTENT_EXCERPT_MAX_CHARS } from '../src/lib/seo-content'
 import { OpenRouterSeoProvider } from '../src/server/ai/openrouter'
 
@@ -25,6 +25,17 @@ const input = {
 }
 
 describe('OpenRouterSeoProvider', () => {
+  it('binds the runtime fetch to globalThis instead of the provider instance', async () => {
+    vi.stubGlobal('fetch', async function (this: unknown) {
+      expect(this).toBe(globalThis)
+      return successResponse()
+    })
+    try {
+      const provider = new OpenRouterSeoProvider({ apiKey: 'fixture', model: 'mock', appName: 'test' })
+      expect((await provider.analyze(input)).result).toEqual(validAnalysis)
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('uses structured output and omits HTTP-Referer when the site URL is empty', async () => {
     let capturedUrl = ''
     let capturedInit: RequestInit | undefined

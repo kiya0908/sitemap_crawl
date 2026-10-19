@@ -39,7 +39,7 @@ export class OpenRouterSeoProvider implements SeoAnalysisProvider {
   constructor(private readonly options: OpenRouterOptions) {
     if (!options.apiKey) throw new Error('OPENROUTER_API_KEY is not configured')
     this.model = options.model
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis)
     this.maxRetries = options.maxRetries ?? 2
   }
 

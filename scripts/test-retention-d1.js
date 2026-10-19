@@ -62,7 +62,7 @@ try {
   assert.deepEqual(await db.query('PRAGMA foreign_key_check', []), [])
   const repeat = await runRetention(db, { now, apply: true })
   assert(repeat.changes.every((t) => t.changed === 0))
-  console.log(JSON.stringify({ localD1: 'passed', migrations: 3, dryRun: 'no writes',
+  console.log(JSON.stringify({ localD1: 'passed', migrations: readdirSync('migrations').filter((f) => f.endsWith('.sql')).length, dryRun: 'no writes',
     boundary: 'retained', manualReview: 'retained', discovered: 3, foreignKeys: 'intact',
     rerun: 'zero changes', changes: applied.changes }, null, 2))
 } finally {

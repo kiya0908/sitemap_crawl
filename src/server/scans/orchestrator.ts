@@ -1,3 +1,4 @@
+import { matchesMonitorPath } from '../../lib/monitor-path'
 import { PagePipelineRepository } from '../../db/page-pipeline-repository'
 import { SitemapRepository } from '../../db/repository'
 import { persistDiscoveredRoots } from '../../db/sitemap-source-discovery'
@@ -35,7 +36,9 @@ export async function runCompetitorScan(
   const scanRunId = await repository.createScanRun(competitorId, triggerType)
 
   try {
+    const pathPrefix = await repository.getMonitorPathPrefix(competitorId)
     const collection = await collectSitemapEntries({
+      pathPrefix,
       competitorDomain: competitor.domain,
       seeds: sources.map((source) => ({ id: source.id, url: source.url })),
     })
@@ -82,7 +85,8 @@ export async function runCompetitorScan(
       return summary
     }
 
-    const existingPages = await repository.listPages(competitorId)
+    const existingPages = (await repository.listPages(competitorId))
+      .filter((page) => matchesMonitorPath(page.normalizedUrl, pathPrefix))
     const diff = calculateScanDiff(collection.entries, existingPages, collection.isComplete)
     const newPageIds = await repository.applyDiff(competitorId, scanRunId, diff)
     const pipelineCounts = await processNewPages(env, pipelineRepository, scanRunId, newPageIds)

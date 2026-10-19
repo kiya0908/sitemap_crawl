@@ -1,3 +1,4 @@
+import { matchesMonitorPath, validatePathPrefix } from '../../lib/monitor-path'
 import { sha256 } from '../../lib/hash'
 import { assertAllowedOutboundUrl } from '../security/outbound'
 import {
@@ -36,6 +37,7 @@ export interface CollectSitemapsResult {
 
 interface CollectOptions {
   competitorDomain: string
+  pathPrefix?: string | null
   seeds: SitemapSeed[]
   fetchImpl?: typeof fetch
   maxDepth?: number
@@ -46,6 +48,7 @@ interface CollectOptions {
 }
 
 export async function collectSitemapEntries(options: CollectOptions): Promise<CollectSitemapsResult> {
+  if (options.pathPrefix) validatePathPrefix(options.pathPrefix)
   const fetchImpl = options.fetchImpl ?? fetch
   const maxDepth = options.maxDepth ?? 5
   const maxSitemaps = options.maxSitemaps ?? 100
@@ -122,6 +125,7 @@ export async function collectSitemapEntries(options: CollectOptions): Promise<Co
 
         try {
           assertAllowedOutboundUrl(node.loc, options.competitorDomain)
+          if (!matchesMonitorPath(node.loc, options.pathPrefix ?? null)) continue
           const normalizedUrl = normalizeUrl(node.loc)
           if (!entries.has(normalizedUrl)) {
             entries.set(normalizedUrl, {

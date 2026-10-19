@@ -1,8 +1,12 @@
+import { inferSlugKeyword, normalizedPathSql, validatePathPrefix } from '../lib/monitor-path'
 import { retentionSchema } from './retention-schema'
 import { csvCell } from '../lib/csv'
 
 export interface PageListFilters {
   competitorId?: string
+  pathPrefix?: string
+  discoveredFrom?: string
+  discoveredBefore?: string
   pageType?: string
   searchIntent?: string
   reviewStatus?: string
@@ -18,8 +22,11 @@ export interface PageListItem {
   competitorId: string
   competitorName: string
   url: string
+  discoveredUrl: string
   title: string | null
   firstSeenAt: string
+  discoveredAt: string
+  keywordSource: 'manual' | 'ai' | 'slug' | 'unavailable'
   lifecycleStatus: string
   fetchStatus: string | null
   analysisStatus: string | null
@@ -103,6 +110,8 @@ interface ListRow {
   current_url: string
   title: string | null
   first_seen_at: string
+  discovered_at: string
+  normalized_url: string
   lifecycle_status: string
   fetch_status: string | null
   analysis_status: string | null
@@ -123,6 +132,24 @@ export class PagesRepository {
 
   private getSchema() { return this.schema ??= retentionSchema(this.db) }
 
+  async getMonitorContext(competitorId: string) {
+    return this.db.prepare(`SELECT c.id, c.name, c.domain, c.is_enabled, c.baseline_established,
+      rule.path_prefix, s.id AS scan_id, s.status, s.is_complete, s.started_at, s.finished_at,
+      s.total_url_count, s.new_count, s.fetch_failed_count, s.analysis_failed_count,
+      (SELECT MAX(done.finished_at) FROM scan_runs done WHERE done.competitor_id = c.id
+        AND done.is_complete = 1 AND done.status = 'success') AS latest_complete_at
+      FROM competitors c LEFT JOIN competitor_monitor_rules rule ON rule.competitor_id = c.id
+      LEFT JOIN scan_runs s ON s.id = (SELECT latest.id FROM scan_runs latest WHERE latest.competitor_id = c.id
+        ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1)
+      WHERE c.id = ? AND c.deleted_at IS NULL`).bind(competitorId).first<{
+        id: string; name: string; domain: string; is_enabled: number; baseline_established: number
+        path_prefix: string | null; scan_id: string | null; status: string | null; is_complete: number | null
+        started_at: string | null; finished_at: string | null; total_url_count: number | null
+        new_count: number | null; fetch_failed_count: number | null; analysis_failed_count: number | null
+        latest_complete_at: string | null
+      }>()
+  }
+
   async listPages(filters: PageListFilters): Promise<{ items: PageListItem[]; total: number; page: number; pageSize: number }> {
     const schema = await this.getSchema()
     const page = Math.max(1, filters.page ?? 1)
@@ -138,6 +165,14 @@ export class PagesRepository {
       where.push('p.competitor_id = ?')
       values.push(filters.competitorId)
     }
+    if (filters.pathPrefix) {
+      validatePathPrefix(filters.pathPrefix)
+      where.push(`substr(${normalizedPathSql}, 1, length(?)) = ? AND length(${normalizedPathSql}) > length(?)`)
+      values.push(filters.pathPrefix, filters.pathPrefix, filters.pathPrefix)
+    }
+    const discoveredAt = `(SELECT MIN(e.detected_at) FROM page_events e WHERE e.page_id = p.id AND e.event_type = 'discovered')`
+    if (filters.discoveredFrom) { where.push(`${discoveredAt} >= ?`); values.push(filters.discoveredFrom) }
+    if (filters.discoveredBefore) { where.push(`${discoveredAt} < ?`); values.push(filters.discoveredBefore) }
     if (filters.pageType) {
       where.push(`COALESCE(NULLIF(pr.manual_page_type, ''), pa.page_type) = ?`)
       values.push(filters.pageType)
@@ -188,14 +223,14 @@ export class PagesRepository {
 
     const rows = await this.db
       .prepare(`SELECT
-        p.id, p.competitor_id, c.name AS competitor_name, p.current_url, seo.title,
+        p.id, p.competitor_id, c.name AS competitor_name, p.current_url, p.normalized_url, seo.title, ${discoveredAt} AS discovered_at,
         p.first_seen_at, p.lifecycle_status, CASE WHEN ${schema.seoExpired ? 'seo.expired_at IS NOT NULL' : '0'} AND seo.fetch_status NOT IN ('pending', 'fetching') THEN 'expired' ELSE seo.fetch_status END AS fetch_status,
         CASE WHEN ${schema.analysisExpired ? 'pa.expired_at IS NOT NULL' : '0'} THEN 'expired' ELSE pa.status END AS analysis_status, pa.page_type AS ai_page_type,
         pa.primary_keyword AS ai_primary_keyword, pa.search_intent AS ai_search_intent,
         pr.review_status, pr.is_viewed, pr.is_worth_following,
         pr.manual_page_type, pr.manual_primary_keyword, pr.manual_search_intent
         ${joins} ${whereSql}
-        ORDER BY p.first_seen_at DESC, p.id DESC
+        ORDER BY discovered_at DESC, p.id DESC
         LIMIT ? OFFSET ?`)
       .bind(...values, pageSize, (page - 1) * pageSize)
       .all<ListRow>()
@@ -399,13 +434,16 @@ function mapListRow(row: ListRow): PageListItem {
     competitorId: row.competitor_id,
     competitorName: row.competitor_name,
     url: row.current_url,
+    discoveredUrl: row.normalized_url,
     title: row.title,
     firstSeenAt: row.first_seen_at,
+    discoveredAt: row.discovered_at,
+    keywordSource: row.manual_primary_keyword ? 'manual' : row.ai_primary_keyword ? 'ai' : inferSlugKeyword(row.normalized_url) ? 'slug' : 'unavailable',
     lifecycleStatus: row.lifecycle_status,
     fetchStatus: row.fetch_status,
-    analysisStatus: row.analysis_status,
+    analysisStatus: row.analysis_status ?? (row.fetch_status === 'failed' || row.fetch_status === 'unsupported' ? 'blocked_fetch' : null),
     pageType: row.manual_page_type || row.ai_page_type,
-    primaryKeyword: row.manual_primary_keyword || row.ai_primary_keyword,
+    primaryKeyword: row.manual_primary_keyword || row.ai_primary_keyword || inferSlugKeyword(row.normalized_url),
     searchIntent: row.manual_search_intent || row.ai_search_intent,
     reviewStatus: row.review_status ?? 'unreviewed',
     isViewed: row.is_viewed === 1,
