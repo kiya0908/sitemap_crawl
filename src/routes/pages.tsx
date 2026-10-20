@@ -10,6 +10,8 @@ interface PageSearch {
   pathPrefix?: string | undefined
   discoveredFrom?: string | undefined
   discoveredBefore?: string | undefined
+  scanNotBefore?: string | undefined
+  scanBefore?: string | undefined
   pageSize: number
   pageType?: string | undefined
   searchIntent?: string | undefined
@@ -88,6 +90,9 @@ function MonitoredPagesPage() {
       {pages.monitor ? (
         <section className="panel" aria-label="监测状态">
           <h2>{pages.monitor.name} 扫描状态</h2>
+          <p>日报就绪状态：{pages.reportReadiness}；扫描窗口 UTC：[ {search.scanNotBefore ?? '未指定'}，{search.scanBefore ?? '未指定'} )</p>
+          {pages.reportReadiness !== 'ready' && pages.reportReadiness !== 'not_requested' ? <p role="alert">本次推送前扫描未就绪，不能借用旧结果或报告无新增。</p> : null}
+          <p>触发方式：{pages.monitor.trigger_type ?? '—'}</p>
           <p>目标：{pages.monitor.domain}；路径：{pages.monitor.path_prefix ?? '全部'}；基线：{pages.monitor.baseline_established ? '已建立' : '尚未建立'}；启用：{pages.monitor.is_enabled ? '是' : '否'}</p>
           <p>最近扫描：{pages.monitor.status ?? '未运行'}；完整：{pages.monitor.is_complete === 1 ? '是' : '否'}；扫描 ID：{pages.monitor.scan_id ?? '无'}</p>
           <p>开始 UTC：{pages.monitor.started_at ?? '无'}；完成 UTC：{pages.monitor.finished_at ?? '无'}；最近完整扫描 UTC：{pages.monitor.latest_complete_at ?? '无'}</p>
@@ -99,6 +104,8 @@ function MonitoredPagesPage() {
       <section className="panel filters-panel">
         <form className="filter-grid" method="get" action="/pages">
           <input type="hidden" name="pageSize" value={search.pageSize} />
+          <input type="hidden" name="scanNotBefore" value={search.scanNotBefore ?? ''} />
+          <input type="hidden" name="scanBefore" value={search.scanBefore ?? ''} />
           <label>严格路径前缀<input name="pathPrefix" defaultValue={search.pathPrefix ?? ''} placeholder="/templates/" /></label>
           <label>发现时间起点（UTC，含）<input name="discoveredFrom" defaultValue={search.discoveredFrom ?? ''} placeholder="YYYY-MM-DDTHH:mm:ss.sssZ" /></label>
           <label>发现时间终点（UTC，不含）<input name="discoveredBefore" defaultValue={search.discoveredBefore ?? ''} placeholder="YYYY-MM-DDTHH:mm:ss.sssZ" /></label>
@@ -212,6 +219,8 @@ function toServerFilters(search: PageSearch) {
     ...optionalObjectValue('pathPrefix', search.pathPrefix),
     ...optionalObjectValue('discoveredFrom', search.discoveredFrom),
     ...optionalObjectValue('discoveredBefore', search.discoveredBefore),
+    ...optionalObjectValue('scanNotBefore', search.scanNotBefore),
+    ...optionalObjectValue('scanBefore', search.scanBefore),
     ...optionalObjectValue('pageType', search.pageType),
     ...optionalObjectValue('searchIntent', search.searchIntent),
     ...optionalObjectValue('reviewStatus', search.reviewStatus),

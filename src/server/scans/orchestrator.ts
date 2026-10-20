@@ -1,4 +1,6 @@
 import { matchesMonitorPath } from '../../lib/monitor-path'
+import { ScheduledScanAlreadyClaimedError } from '../../db/errors'
+import { competitorScanCron, MORNING_CRON, PRE_REPORT_CRON } from '../../lib/scan-schedule'
 import { PagePipelineRepository } from '../../db/page-pipeline-repository'
 import { SitemapRepository } from '../../db/repository'
 import { persistDiscoveredRoots } from '../../db/sitemap-source-discovery'
@@ -13,6 +15,7 @@ export async function runCompetitorScan(
   env: Env,
   competitorId: string,
   triggerType: ScanTrigger,
+  scheduledFor?: string,
 ): Promise<ScanSummary> {
   const repository = new SitemapRepository(env.DB)
   const pipelineRepository = new PagePipelineRepository(env.DB)
@@ -33,7 +36,7 @@ export async function runCompetitorScan(
     throw new Error(`No Sitemap could be configured or discovered for ${competitor.domain}`)
   }
 
-  const scanRunId = await repository.createScanRun(competitorId, triggerType)
+  const scanRunId = await repository.createScanRun(competitorId, triggerType, scheduledFor)
 
   try {
     const pathPrefix = await repository.getMonitorPathPrefix(competitorId)
@@ -125,15 +128,24 @@ export async function runCompetitorScan(
   }
 }
 
-export async function runAllEnabledCompetitors(env: Env): Promise<ScanSummary[]> {
+export async function runScheduledCompetitors(env: Env, cron: string, scheduledTime: number): Promise<ScanSummary[]> {
+  const expectedMinute = cron === MORNING_CRON ? 60 : cron === PRE_REPORT_CRON ? 620 : null
+  const time = new Date(scheduledTime)
+  if (expectedMinute === null || !Number.isFinite(scheduledTime)
+    || time.getUTCHours() * 60 + time.getUTCMinutes() !== expectedMinute) {
+    throw new Error('Unsupported cron or inconsistent scheduled time')
+  }
+  time.setUTCSeconds(0, 0)
+  const scheduledFor = time.toISOString()
   const repository = new SitemapRepository(env.DB)
-  const competitors = await repository.listCompetitors(true)
+  const competitors = (await repository.listCompetitors(true)).filter((competitor) => competitorScanCron(competitor.id) === cron)
   const results: ScanSummary[] = []
 
   for (const competitor of competitors) {
     try {
-      results.push(await runCompetitorScan(env, competitor.id, 'cron'))
+      results.push(await runCompetitorScan(env, competitor.id, 'cron', scheduledFor))
     } catch (error) {
+      if (error instanceof ScheduledScanAlreadyClaimedError) continue
       console.error(JSON.stringify({
         message: 'Scheduled competitor scan failed',
         competitorId: competitor.id,

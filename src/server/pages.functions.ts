@@ -1,4 +1,5 @@
 import { pageFiltersSchema } from '../lib/page-filters'
+import { reportReadiness } from '../lib/report-readiness'
 import { createServerFn } from '@tanstack/react-start'
 import { env } from 'cloudflare:workers'
 import { z } from 'zod'
@@ -34,7 +35,7 @@ export const listMonitoredPages = createServerFn({ method: 'GET' })
     const pages = await repository.listPages(cleanFilters(data))
     const monitor = data.competitorId ? await repository.getMonitorContext(data.competitorId) : null
     if (data.competitorId && !monitor) throw new Error('所选监测目标不存在或已删除')
-    return { ...pages, monitor }
+    return { ...pages, monitor, reportReadiness: reportReadiness(monitor, data.scanNotBefore, data.scanBefore) }
   })
 
 export const getMonitoredPageSerialized = createServerFn({ method: 'GET' })

@@ -13,6 +13,8 @@ export const pageFiltersSchema = z.object({
   }, 'Invalid strict path prefix').optional(),
   discoveredFrom: utc.optional(),
   discoveredBefore: utc.optional(),
+  scanNotBefore: utc.optional(),
+  scanBefore: utc.optional(),
   pageType: z.string().max(100).optional(),
   searchIntent: z.string().max(100).optional(),
   reviewStatus: z.string().max(100).optional(),
@@ -22,10 +24,14 @@ export const pageFiltersSchema = z.object({
   page: z.coerce.number().int().min(1).max(10_000).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 }).superRefine((value, ctx) => {
-  if ((value.pathPrefix || value.discoveredFrom || value.discoveredBefore) && !value.competitorId) {
+  if ((value.pathPrefix || value.discoveredFrom || value.discoveredBefore || value.scanNotBefore || value.scanBefore) && !value.competitorId) {
     ctx.addIssue({ code: 'custom', message: 'A competitorId is required for a scoped report' })
   }
   if (value.discoveredFrom && value.discoveredBefore && value.discoveredFrom >= value.discoveredBefore) {
     ctx.addIssue({ code: 'custom', message: 'discoveredFrom must be before discoveredBefore' })
+  }
+  if (Boolean(value.scanNotBefore) !== Boolean(value.scanBefore)
+    || (value.scanNotBefore && value.scanBefore && value.scanNotBefore >= value.scanBefore)) {
+    ctx.addIssue({ code: 'custom', message: 'Supply both scan window bounds in increasing order' })
   }
 })

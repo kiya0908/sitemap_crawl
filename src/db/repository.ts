@@ -1,6 +1,6 @@
 import { createId } from '../lib/id'
 import { shanghaiDayStartUtc } from '../lib/time'
-import { CompetitorDomainConflictError, ScanAlreadyRunningError } from './errors'
+import { CompetitorDomainConflictError, ScanAlreadyRunningError, ScheduledScanAlreadyClaimedError } from './errors'
 import { normalizeDomain, normalizeUrl } from '../server/sitemap/normalize'
 import type {
   CompetitorRecord,
@@ -131,10 +131,16 @@ export class SitemapRepository {
     }))
   }
 
-  async createScanRun(competitorId: string, triggerType: ScanTrigger): Promise<string> {
-    const id = createId('scan')
+  async createScanRun(competitorId: string, triggerType: ScanTrigger, scheduledFor?: string): Promise<string> {
+    // Existing primary key is the atomic claim; replaying a slot cannot start another scan.
+    const id = scheduledFor ? `scan_cron:${competitorId}:${scheduledFor}` : createId('scan')
     const now = new Date().toISOString()
     const staleBefore = new Date(Date.now() - 6 * 60 * 60 * 1_000).toISOString()
+
+    const alreadyClaimed = async () => scheduledFor && await this.db.prepare(
+      'SELECT id FROM scan_runs WHERE id = ?',
+    ).bind(id).first<{ id: string }>()
+    if (await alreadyClaimed()) throw new ScheduledScanAlreadyClaimedError(competitorId, scheduledFor!)
 
     await this.db.prepare(`UPDATE scan_runs
       SET status = 'failed', is_complete = 0, finished_at = ?,
@@ -151,6 +157,7 @@ export class SitemapRepository {
         .bind(id, competitorId, triggerType, now, now)
         .run()
     } catch (error) {
+      if (await alreadyClaimed()) throw new ScheduledScanAlreadyClaimedError(competitorId, scheduledFor!)
       const running = await this.db
         .prepare(`SELECT id FROM scan_runs WHERE competitor_id = ? AND status = 'running' LIMIT 1`)
         .bind(competitorId)

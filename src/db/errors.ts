@@ -1,3 +1,10 @@
+export class ScheduledScanAlreadyClaimedError extends Error {
+  constructor(readonly competitorId: string, readonly scheduledFor: string) {
+    super('Scheduled scan slot has already been claimed')
+    this.name = 'ScheduledScanAlreadyClaimedError'
+  }
+}
+
 export class CompetitorDomainConflictError extends Error {
   readonly code = 'COMPETITOR_DOMAIN_CONFLICT'
 

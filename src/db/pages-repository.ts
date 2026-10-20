@@ -135,6 +135,7 @@ export class PagesRepository {
   async getMonitorContext(competitorId: string) {
     return this.db.prepare(`SELECT c.id, c.name, c.domain, c.is_enabled, c.baseline_established,
       rule.path_prefix, s.id AS scan_id, s.status, s.is_complete, s.started_at, s.finished_at,
+      s.trigger_type,
       s.total_url_count, s.new_count, s.fetch_failed_count, s.analysis_failed_count,
       (SELECT MAX(done.finished_at) FROM scan_runs done WHERE done.competitor_id = c.id
         AND done.is_complete = 1 AND done.status = 'success') AS latest_complete_at
@@ -147,6 +148,7 @@ export class PagesRepository {
         started_at: string | null; finished_at: string | null; total_url_count: number | null
         new_count: number | null; fetch_failed_count: number | null; analysis_failed_count: number | null
         latest_complete_at: string | null
+        trigger_type: string | null
       }>()
   }
 

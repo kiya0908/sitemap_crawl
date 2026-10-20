@@ -5,7 +5,9 @@ import { matchesMonitorPath, validatePathPrefix } from '../src/lib/monitor-path'
 import { pageFiltersSchema } from '../src/lib/page-filters'
 import { SitemapRepository } from '../src/db/repository'
 import { PagesRepository } from '../src/db/pages-repository'
-import { runCompetitorScan } from '../src/server/scans/orchestrator'
+import { runCompetitorScan, runScheduledCompetitors } from '../src/server/scans/orchestrator'
+import { reportReadiness } from '../src/lib/report-readiness'
+import { PRE_REPORT_COMPETITOR_ID } from '../src/lib/scan-schedule'
 
 const connections: DatabaseSync[] = []
 afterEach(() => { vi.unstubAllGlobals(); for (const sql of connections.splice(0)) sql.close() })
@@ -33,6 +35,52 @@ function fixture() {
 }
 
 describe('strict monitor scope', () => {
+  it('separates morning/evening targets and claims each scheduled slot once', async () => {
+    const f = fixture(); const repo = new SitemapRepository(f.db)
+    const morning = await repo.createCompetitor({ name: 'Morning', domain: 'morning.example', sitemapUrls: ['https://morning.example/sitemap.xml'] })
+    const evening = PRE_REPORT_COMPETITOR_ID
+    f.sql.prepare('INSERT INTO competitors (id,name,domain,is_enabled,baseline_established,created_at,updated_at) VALUES (?,?,?,1,0,?,?)').run(evening, 'Evening', 'evening.example', new Date().toISOString(), new Date().toISOString())
+    f.sql.prepare("INSERT INTO sitemap_sources (id,competitor_id,url,normalized_url,source_type,created_at,updated_at) VALUES (?,?,?,?,'manual',?,?)").run('evening_source', evening, 'https://evening.example/sitemap.xml', 'https://evening.example/sitemap.xml', new Date().toISOString(), new Date().toISOString())
+    const disabled = await repo.createCompetitor({ name: 'Disabled', domain: 'disabled.example', sitemapUrls: [] })
+    const deleted = await repo.createCompetitor({ name: 'Deleted', domain: 'deleted.example', sitemapUrls: [] })
+    f.sql.prepare('UPDATE competitors SET is_enabled=0 WHERE id=?').run(disabled)
+    f.sql.prepare('UPDATE competitors SET deleted_at=? WHERE id=?').run(new Date().toISOString(), deleted)
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => new Response(`<urlset><url><loc>${new URL(String(input)).origin}/templates/old</loc></url></urlset>`))
+    vi.stubGlobal('fetch', fetchMock)
+    const am = Date.parse('2026-10-20T01:00:00.000Z'); const pm = Date.parse('2026-10-20T10:20:00.000Z')
+    expect((await runScheduledCompetitors(f.env, '0 1 * * *', am)).map(x => x.competitorId)).toEqual([morning])
+    expect((await repo.getCompetitor(evening))?.baselineEstablished).toBe(false)
+    expect((await runScheduledCompetitors(f.env, '20 10 * * *', pm)).map(x => x.competitorId)).toEqual([evening])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(await runScheduledCompetitors(f.env, '20 10 * * *', pm)).toEqual([])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const slot = '2026-10-21T10:20:00.000Z'
+    const claims = await Promise.allSettled([repo.createScanRun(evening, 'cron', slot), repo.createScanRun(evening, 'cron', slot)])
+    expect(claims.filter(x => x.status === 'fulfilled')).toHaveLength(1)
+    f.sql.prepare("UPDATE scan_runs SET status='failed' WHERE id=?").run(`scan_cron:${evening}:${slot}`)
+    await expect(repo.createScanRun(evening, 'cron', slot)).rejects.toThrow('already been claimed')
+    expect(await runScheduledCompetitors(f.env, '20 10 * * *', Date.parse(slot))).toEqual([])
+    await expect(runScheduledCompetitors(f.env, '* * * * *', pm)).rejects.toThrow('Unsupported')
+    await expect(runScheduledCompetitors(f.env, '20 10 * * *', am)).rejects.toThrow('Unsupported')
+    expect(f.sql.prepare('PRAGMA foreign_key_check').all()).toEqual([])
+  })
+
+  it('accepts only the latest complete success in the report window and at most 20 minutes old', () => {
+    const from = '2026-10-20T10:20:00.000Z', before = '2026-10-20T10:30:00.000Z'
+    const now = Date.parse(before)
+    const good = { is_enabled: 1, baseline_established: 1, status: 'success', is_complete: 1, started_at: from, finished_at: before }
+    expect(reportReadiness(good, from, before, now)).toBe('ready')
+    expect(reportReadiness({ ...good, started_at: '2026-10-20T01:00:00.000Z' }, from, before, now)).toBe('stale_or_outside_window')
+    for (const status of ['running', 'failed', 'partial_success']) expect(reportReadiness({ ...good, status }, from, before, now)).toBe(status)
+    expect(reportReadiness({ ...good, is_complete: 0 }, from, before, now)).toBe('incomplete')
+    expect(reportReadiness({ ...good, finished_at: null }, from, before, now)).toBe('invalid_time')
+    expect(reportReadiness(good, from, before, now + 600_000)).toBe('ready')
+    expect(reportReadiness(good, from, before, now + 600_001)).toBe('stale_or_outside_window')
+    expect(reportReadiness({ ...good, started_at: before }, from, before, now)).toBe('stale_or_outside_window')
+    expect(pageFiltersSchema.safeParse({ competitorId: 'a', scanNotBefore: from }).success).toBe(false)
+    expect(pageFiltersSchema.safeParse({ competitorId: 'a', scanNotBefore: before, scanBefore: from }).success).toBe(false)
+  })
+
   it.each(['/templates/a', '/templates/a/b', '/templates/a?x=1'])( 'accepts %s', (path) => {
     expect(matchesMonitorPath(`https://example.com${path}`, '/templates/')).toBe(true)
   })
