@@ -1,3 +1,4 @@
+import { collectPublicPages, type DiscoveryProvider } from '../discovery/collect'
 import { matchesMonitorPath } from '../../lib/monitor-path'
 import { ScheduledScanAlreadyClaimedError } from '../../db/errors'
 import { competitorScanCron, MORNING_CRON, PRE_REPORT_CRON } from '../../lib/scan-schedule'
@@ -23,6 +24,14 @@ export async function runCompetitorScan(
 
   if (!competitor || !competitor.isEnabled) {
     throw new Error(`Enabled competitor ${competitorId} was not found`)
+  }
+
+  const discovery = await env.DB.prepare('SELECT provider FROM page_discovery_configs WHERE competitor_id = ?')
+    .bind(competitorId).first<{ provider: DiscoveryProvider }>()
+  if (discovery) {
+    const expectedDomain = discovery.provider === 'media_zones' ? 'media.io' : 'dreamina.capcut.com'
+    if (competitor.domain !== expectedDomain) throw new Error('DISCOVERY_DOMAIN_MISMATCH')
+    return runPublicDiscoveryScan(env, competitorId, competitor.baselineEstablished, discovery.provider, triggerType, scheduledFor)
   }
 
   let sources = await repository.listEnabledSitemaps(competitorId)
@@ -258,5 +267,46 @@ function buildSummary(
     missingCount,
     reappearedCount,
     errors,
+  }
+}
+
+async function runPublicDiscoveryScan(
+  env: Env, competitorId: string, baselineEstablished: boolean,
+  provider: DiscoveryProvider, trigger: ScanTrigger, scheduledFor?: string,
+): Promise<ScanSummary> {
+  const repository = new SitemapRepository(env.DB)
+  const scanRunId = await repository.createScanRun(competitorId, trigger, scheduledFor)
+  try {
+    const collection = await collectPublicPages(provider)
+    await env.DB.prepare('UPDATE scan_runs SET source_complete = ? WHERE id = ?')
+      .bind(collection.sourceComplete ? 1 : 0, scanRunId).run()
+    let newCount = 0
+    // A completed traversal establishes a SOURCE baseline, never a claim of
+    // whole-site coverage. Failed, empty, truncated sources cannot establish it.
+    if (collection.sourceComplete) {
+      if (!baselineEstablished) {
+        await repository.establishBaseline(competitorId, scanRunId, collection.entries)
+      } else {
+        const existing = await repository.listPages(competitorId)
+        const diff = calculateScanDiff(collection.entries, existing, true)
+        // Rolling lists can remove links without removing pages from the site.
+        diff.firstMissing = []
+        diff.confirmedMissing = []
+        const ids = await repository.applyDiff(competitorId, scanRunId, diff)
+        newCount = diff.newEntries.length
+        const pipeline = new PagePipelineRepository(env.DB)
+        await pipeline.updateScanPipelineCounts(scanRunId, await processNewPages(env, pipeline, scanRunId, ids))
+      }
+    }
+    const status = collection.sourceComplete ? 'partial_success' : 'failed'
+    await repository.finishScan({
+      scanRunId, competitorId, status, isComplete: false, sitemapCount: 0,
+      totalUrlCount: collection.entries.length, newCount, missingCount: 0, reappearedCount: 0,
+      errorSummary: collection.errors.join('\n').slice(0, 4000),
+    })
+    return buildSummary(scanRunId, competitorId, status, false, collection.entries.length, newCount, 0, 0, collection.errors)
+  } catch (error) {
+    await repository.failScan(scanRunId, competitorId, error)
+    throw error
   }
 }

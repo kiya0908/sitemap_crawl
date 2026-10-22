@@ -27,6 +27,7 @@ export interface SitemapUrlEntry {
   normalizedUrl: string
   lastmod: string | null
   sourceUrl: string
+  discoveryMethod?: string
 }
 
 export interface ExistingPageRecord {
