@@ -92,6 +92,8 @@ function MonitoredPagesPage() {
           <h2>{pages.monitor.name} 扫描状态</h2>
           <p>日报就绪状态：{pages.reportReadiness}；扫描窗口 UTC：[ {search.scanNotBefore ?? '未指定'}，{search.scanBefore ?? '未指定'} )</p>
           {pages.reportReadiness !== 'ready' && pages.reportReadiness !== 'not_requested' ? <p role="alert">本次推送前扫描未就绪，不能借用旧结果或报告无新增。</p> : null}
+          {pages.monitor.discovery_provider ? <p role="status">数据来源：{pages.monitor.discovery_provider}；来源遍历：{pages.monitor.source_complete === 1 ? '完成' : '未完成'}。仅覆盖公开列表，首次发现不等于发布；空结果不能证明网站无新增。</p> : null}
+          {pages.monitor.error_summary ? <p role="status">{pages.monitor.error_summary}</p> : null}
           <p>触发方式：{pages.monitor.trigger_type ?? '—'}</p>
           <p>目标：{pages.monitor.domain}；路径：{pages.monitor.path_prefix ?? '全部'}；基线：{pages.monitor.baseline_established ? '已建立' : '尚未建立'}；启用：{pages.monitor.is_enabled ? '是' : '否'}</p>
           <p>最近扫描：{pages.monitor.status ?? '未运行'}；完整：{pages.monitor.is_complete === 1 ? '是' : '否'}；扫描 ID：{pages.monitor.scan_id ?? '无'}</p>
@@ -183,6 +185,7 @@ function MonitoredPagesPage() {
                       {item.title || pathnameLabel(item.url)}
                     </a>
                     <span title={item.discoveredUrl}>{item.discoveredUrl}</span>
+                    <small>发现来源：{item.discoveryMethod}{item.discoverySourceUrl ? ` · ${item.discoverySourceUrl}` : ''}</small>
                   </td>
                   <td>{item.pageType ? formatEnum(item.pageType) : '—'}</td>
                   <td>{item.primaryKeyword ?? '—'}<small>{item.keywordSource === 'slug' ? 'URL slug 推断 · 低置信度' : item.keywordSource === 'manual' ? '人工关键词' : item.keywordSource === 'ai' ? 'AI 推测，非排名词' : '关键词不可用'}</small></td>

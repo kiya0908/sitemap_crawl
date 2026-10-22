@@ -23,6 +23,8 @@ export interface PageListItem {
   competitorName: string
   url: string
   discoveredUrl: string
+  discoveryMethod: string
+  discoverySourceUrl: string | null
   title: string | null
   firstSeenAt: string
   discoveredAt: string
@@ -112,6 +114,8 @@ interface ListRow {
   first_seen_at: string
   discovered_at: string
   normalized_url: string
+  discovery_method: string
+  discovery_source_url: string | null
   lifecycle_status: string
   fetch_status: string | null
   analysis_status: string | null
@@ -135,13 +139,14 @@ export class PagesRepository {
   async getMonitorContext(competitorId: string) {
     return this.db.prepare(`SELECT c.id, c.name, c.domain, c.is_enabled, c.baseline_established,
       rule.path_prefix, s.id AS scan_id, s.status, s.is_complete, s.started_at, s.finished_at,
-      s.trigger_type,
+      s.trigger_type, s.source_complete, s.error_summary, dc.provider AS discovery_provider,
       s.total_url_count, s.new_count, s.fetch_failed_count, s.analysis_failed_count,
       (SELECT MAX(done.finished_at) FROM scan_runs done WHERE done.competitor_id = c.id
         AND done.is_complete = 1 AND done.status = 'success') AS latest_complete_at
-      FROM competitors c LEFT JOIN competitor_monitor_rules rule ON rule.competitor_id = c.id
+      FROM competitors c LEFT JOIN page_discovery_configs dc ON dc.competitor_id = c.id
+      LEFT JOIN competitor_monitor_rules rule ON rule.competitor_id = c.id
       LEFT JOIN scan_runs s ON s.id = (SELECT latest.id FROM scan_runs latest WHERE latest.competitor_id = c.id
-        ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1)
+        ORDER BY latest.created_at DESC, latest.rowid DESC LIMIT 1)
       WHERE c.id = ? AND c.deleted_at IS NULL`).bind(competitorId).first<{
         id: string; name: string; domain: string; is_enabled: number; baseline_established: number
         path_prefix: string | null; scan_id: string | null; status: string | null; is_complete: number | null
@@ -149,6 +154,7 @@ export class PagesRepository {
         new_count: number | null; fetch_failed_count: number | null; analysis_failed_count: number | null
         latest_complete_at: string | null
         trigger_type: string | null
+        source_complete: number | null; error_summary: string | null; discovery_provider: string | null
       }>()
   }
 
@@ -226,7 +232,7 @@ export class PagesRepository {
     const rows = await this.db
       .prepare(`SELECT
         p.id, p.competitor_id, c.name AS competitor_name, p.current_url, p.normalized_url, seo.title, ${discoveredAt} AS discovered_at,
-        p.first_seen_at, p.lifecycle_status, CASE WHEN ${schema.seoExpired ? 'seo.expired_at IS NOT NULL' : '0'} AND seo.fetch_status NOT IN ('pending', 'fetching') THEN 'expired' ELSE seo.fetch_status END AS fetch_status,
+        p.discovery_method, p.discovery_source_url, p.first_seen_at, p.lifecycle_status, CASE WHEN ${schema.seoExpired ? 'seo.expired_at IS NOT NULL' : '0'} AND seo.fetch_status NOT IN ('pending', 'fetching') THEN 'expired' ELSE seo.fetch_status END AS fetch_status,
         CASE WHEN ${schema.analysisExpired ? 'pa.expired_at IS NOT NULL' : '0'} THEN 'expired' ELSE pa.status END AS analysis_status, pa.page_type AS ai_page_type,
         pa.primary_keyword AS ai_primary_keyword, pa.search_intent AS ai_search_intent,
         pr.review_status, pr.is_viewed, pr.is_worth_following,
@@ -400,6 +406,8 @@ export class PagesRepository {
         'First Seen',
         'Competitor',
         'URL',
+        'Discovery Method',
+        'Discovery Source URL',
         'Title',
         'Lifecycle Status',
         'Fetch Status',
@@ -414,6 +422,8 @@ export class PagesRepository {
         item.firstSeenAt,
         item.competitorName,
         item.url,
+        item.discoveryMethod,
+        item.discoverySourceUrl ?? '',
         item.title ?? '',
         item.lifecycleStatus,
         item.fetchStatus ?? '',
@@ -437,6 +447,8 @@ function mapListRow(row: ListRow): PageListItem {
     competitorName: row.competitor_name,
     url: row.current_url,
     discoveredUrl: row.normalized_url,
+    discoveryMethod: row.discovery_method ?? 'sitemap',
+    discoverySourceUrl: row.discovery_source_url ?? null,
     title: row.title,
     firstSeenAt: row.first_seen_at,
     discoveredAt: row.discovered_at,

@@ -95,3 +95,9 @@ pnpm run db:migrate:remote
 ## 数据保留
 
 默认 7 天重内容/日志保留，长期保留 URL 去重身份、发现标记和人工值。清理仅通过显式运维 CLI 执行，默认只读预览，生产写入默认关闭；详见 [数据保留操作说明](docs/DATA_RETENTION.md)。应用新代码前需单独应用 `0003_data_retention.sql`；本分支不自动迁移或清理数据。
+
+## 非 Sitemap 页面发现
+
+支持 Media.io Zone 公开链接接口与 Dreamina AI Video 分类分页。来源覆盖有限，独立记录来源遍历状态，首次发现不代表发布时间；失败/空结果不能解释为网站无新增。保留 Makeviral 18:20 扫描，新目标使用已有 09:00 扫描。
+
+部署前先应用 `0005_page_discovery.sql`，再按 [配置、覆盖限制与 Dot 批量接口说明](docs/NON_SITEMAP_DISCOVERY.md) 启用目标。Dot 可使用 `/pages` 或 `/api/discovery/pages`（同样需要 Cloudflare Access）。

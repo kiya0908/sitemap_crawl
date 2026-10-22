@@ -272,9 +272,9 @@ export class SitemapRepository {
           .prepare(`INSERT OR IGNORE INTO pages
             (id, competitor_id, original_url, normalized_url, current_url, lifecycle_status,
              missing_streak, first_seen_at, last_seen_at, sitemap_lastmod,
-             first_scan_run_id, last_scan_run_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'baseline', 0, ?, ?, ?, ?, ?, ?, ?)`)
-          .bind(pageId, competitorId, entry.url, entry.normalizedUrl, entry.url, now, now, entry.lastmod, scanRunId, scanRunId, now, now),
+             first_scan_run_id, last_scan_run_id, created_at, updated_at, discovery_method, discovery_source_url)
+            VALUES (?, ?, ?, ?, ?, 'baseline', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(pageId, competitorId, entry.url, entry.normalizedUrl, entry.url, now, now, entry.lastmod, scanRunId, scanRunId, now, now, entry.discoveryMethod ?? 'sitemap', entry.sourceUrl),
         this.db
           .prepare(`INSERT OR IGNORE INTO page_events
             (id, page_id, scan_run_id, event_type, detected_at, created_at)
@@ -317,9 +317,9 @@ export class SitemapRepository {
           .prepare(`INSERT OR IGNORE INTO pages
             (id, competitor_id, original_url, normalized_url, current_url, lifecycle_status,
              missing_streak, first_seen_at, last_seen_at, sitemap_lastmod,
-             first_scan_run_id, last_scan_run_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'new', 0, ?, ?, ?, ?, ?, ?, ?)`)
-          .bind(pageId, competitorId, entry.url, entry.normalizedUrl, entry.url, now, now, entry.lastmod, scanRunId, scanRunId, now, now),
+             first_scan_run_id, last_scan_run_id, created_at, updated_at, discovery_method, discovery_source_url)
+            VALUES (?, ?, ?, ?, ?, 'new', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(pageId, competitorId, entry.url, entry.normalizedUrl, entry.url, now, now, entry.lastmod, scanRunId, scanRunId, now, now, entry.discoveryMethod ?? 'sitemap', entry.sourceUrl),
         this.db
           .prepare(`INSERT INTO page_events
             (id, page_id, scan_run_id, event_type, new_value_json, detected_at, created_at)
